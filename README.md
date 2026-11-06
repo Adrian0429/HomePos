@@ -22,6 +22,10 @@ Kerangka Next.js App Router + TypeScript + Tailwind CSS + PostgreSQL. Backend me
 
 Skema dijalankan sekali pada database baru. Nama tabel/kolom menggunakan snake_case dengan pemetaan langsung ke rancangan awal. Primary key memakai identity. Jangan menjalankan seed contoh ke database bisnis aktif.
 
+## Deploy otomatis
+
+Workflow `.github/workflows/deploy.yml` menjalankan deploy pada setiap push ke branch `main`. Repository GitHub perlu memiliki Actions Secrets `HOMEPOS_DEPLOY_HOST`, `HOMEPOS_DEPLOY_USER`, `HOMEPOS_DEPLOY_SSH_KEY`, dan `HOMEPOS_DEPLOY_KNOWN_HOSTS`. Server perlu menyiapkan aplikasi di `/opt/homepos/app`, environment production, service systemd bernama `homepos`, serta script `scripts/deploy-server.sh` dipasang sebagai `/opt/homepos/deploy.sh`.
+
 ## API
 
 | Metode | Endpoint | Fungsi |
