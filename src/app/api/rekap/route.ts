@@ -32,6 +32,36 @@ export async function GET(request:Request){
         FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
         WHERE t.status<>'Batal' AND t.transaction_date BETWEEN $1::date AND $2::date GROUP BY p.plastik_id
       ) SELECT category,id,name,unit,masuk::text,keluar::text,(masuk-keluar)::text AS net FROM movement ORDER BY category,name`,args);
+      const minumanCount=await db.query(`SELECT COUNT(*)::int AS count FROM (
+        SELECT t.transaction_date,d.product_id,COALESCE(NULLIF(t.customer_name,''),'Umum') AS customer
+        FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id)
+        WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+        GROUP BY t.transaction_date,d.product_id,COALESCE(NULLIF(t.customer_name,''),'Umum')
+      ) grouped_rows`,args);
+      const minumanDetails=await db.query(`SELECT to_char(t.transaction_date,'YYYY-MM-DD') AS date,p.product_name AS product,
+        COALESCE(NULLIF(t.customer_name,''),'Umum') AS "customerName",SUM(d.jumlah)::text AS quantity,
+        SUM(d.subtotal)::text AS total,COUNT(DISTINCT t.transaksi_id)::int AS transactions
+        FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id) JOIN product p USING(product_id)
+        WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+        GROUP BY t.transaction_date,p.product_id,p.product_name,COALESCE(NULLIF(t.customer_name,''),'Umum')
+        ORDER BY t.transaction_date DESC,p.product_name,"customerName" LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
+      const plastikCount=await db.query(`SELECT COUNT(*)::int AS count FROM (
+        SELECT t.transaction_date,d.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik') AS party
+        FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) LEFT JOIN supplier s USING(supplier_id)
+        WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
+        GROUP BY t.transaction_date,d.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
+      ) grouped_rows`,args);
+      const plastikDetails=await db.query(`SELECT to_char(t.transaction_date,'YYYY-MM-DD') AS date,p.plastik_name AS product,
+        CASE WHEN t.type='Beli Plastik' THEN 'Masuk' ELSE 'Kirim ke pabrik' END AS movement,
+        COALESCE(s.supplier_name,'Pabrik') AS party,t.status::text AS status,
+        SUM(CASE WHEN t.type='Beli Plastik' THEN d.berat_diterima ELSE d.berat_kirim END)::text AS weight,
+        SUM(CASE WHEN t.type='Kirim Pabrik' THEN d.berat_diterima ELSE 0 END)::text AS received,
+        COUNT(DISTINCT t.transaksi_id)::int AS transactions
+        FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
+        LEFT JOIN supplier s USING(supplier_id)
+        WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
+        GROUP BY t.transaction_date,p.plastik_id,p.plastik_name,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
+        ORDER BY t.transaction_date DESC,p.plastik_name,movement,party LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
       const factory=await db.query(`SELECT
         (SELECT COUNT(*)::int FROM transaksi WHERE type='Kirim Pabrik' AND status='Menunggu Pabrik' AND transaction_date BETWEEN $1::date AND $2::date) AS pending,
         COUNT(*)::int AS notes,COALESCE(SUM(total_nominal),0)::text AS nominal
@@ -51,7 +81,9 @@ export async function GET(request:Request){
         s.supplier_name AS "supplierName",COALESCE(m.payment_method,'—') AS method,e.masuk::text,e.keluar::text,e.nota::text
         FROM events e LEFT JOIN metode_bayar m USING(method_id) LEFT JOIN supplier s USING(supplier_id)
         WHERE date BETWEEN $1::date AND $2::date ORDER BY date DESC,transaksi_id DESC,event LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
-      return {from:f.from,to:f.to,cash:cash.rows,goods:goods.rows,factory:factory.rows[0],events:rows.rows,count:count.rows[0].count,page:f.page,pageSize:50};
+      return {from:f.from,to:f.to,cash:cash.rows,goods:goods.rows,minumanDetails:minumanDetails.rows,
+        minumanCount:minumanCount.rows[0].count,plastikDetails:plastikDetails.rows,plastikCount:plastikCount.rows[0].count,
+        factory:factory.rows[0],events:rows.rows,count:count.rows[0].count,page:f.page,pageSize:50};
     });
   });
 }

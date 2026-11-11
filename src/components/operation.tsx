@@ -35,7 +35,7 @@ export function useOperation() {
     catch { throw new Error('Katalog gagal dimuat. Periksa koneksi database lalu coba muat ulang.'); }
   }
   useEffect(() => {setDate(today());refresh().catch(e => setMessage(e.message));},[]);
-  async function save(body:unknown, clear:()=>void, requiresPayment=true) {
+  async function save(body:unknown, clear:()=>void, requiresPayment=true, afterSave?:(result:{transaksi_id:number;total_nominal:string})=>Promise<void>) {
     if (lock.current) return;
     if (requiresPayment && !method) {setMessage('Pilih metode pembayaran terlebih dahulu.');return;}
     lock.current=true;setBusy(true);setMessage('');
@@ -44,6 +44,10 @@ export function useOperation() {
       const result = await request('/api/transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       saved=true;clear();
       setMessage(`Transaksi #${result.transaksi_id} selesai. Total ${rupiah(scaled(result.total_nominal,2))}.`);
+      if(afterSave) {
+        try { await afterSave(result); }
+        catch(e) { setMessage(`Transaksi #${result.transaksi_id} tersimpan, tetapi struk belum tercetak: ${(e as Error).message}`); }
+      }
       await refresh();
     } catch(e) {
       setMessage(saved ? 'Transaksi sudah tersimpan, tetapi stok terbaru gagal dimuat. Muat ulang katalog; jangan kirim ulang transaksi.' : (e as Error).message);

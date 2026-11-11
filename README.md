@@ -24,6 +24,10 @@ Kerangka Next.js App Router + TypeScript + Tailwind CSS + PostgreSQL. Backend me
 
 Halaman aplikasi dan API memerlukan sesi login. Jalankan `npm run db:migrate` setelah schema dibuat; migrasi membuat tabel autentikasi dan menyemai akun awal `Admin` / `Admin123`. Password disimpan sebagai hash scrypt dan sesi disimpan sebagai token acak yang hanya di-cookie HttpOnly. Migrasi bisa dijalankan berulang, tetapi akan mereset password akun Admin ke nilai awal tersebut.
 
+## Printer kasir
+
+Halaman `/pos` memeriksa print agent lokal pada `http://localhost:5000` setiap 5 detik, membaca printer dari `GET /printers`, lalu mengirim struk 58 mm ESC/POS sebagai base64 `RAW` ke `POST /job`. Print agent perlu berjalan pada komputer yang membuka kasir; printer yang dipilih disimpan di browser. Penjualan tetap tersimpan apabila cetak gagal, dan kasir dapat mencoba cetak ulang tanpa membuat transaksi kedua.
+
 Skema dijalankan sekali pada database baru. Nama tabel/kolom menggunakan snake_case dengan pemetaan langsung ke rancangan awal. Primary key memakai identity. Jangan menjalankan seed contoh ke database bisnis aktif.
 
 ## Deploy otomatis
@@ -108,7 +112,7 @@ Navigasi di bagian atas menghubungkan `/pos` (Kasir Minuman), `/beli-plastik` (p
 
 ## Master barang
 
-Buka `/master` untuk menambah dan mengedit produk minuman (nama, merek, harga modal, stok unit) serta plastik (nama dan stok kg). Merek baru otomatis dibuat dari form produk. Data dibaca dan disimpan melalui GET/POST/PATCH `/api/master`; harga jual produk diatur pada setiap transaksi POS. Tidak perlu migrasi tambahan.
+Buka `/master` untuk menambah, mengedit, dan menghapus produk minuman (nama, merek, harga modal, stok unit) serta plastik (nama dan stok kg). Data yang sudah dipakai transaksi tidak bisa dihapus agar riwayat penjualan dan stok historis tetap utuh. Merek baru otomatis dibuat dari form produk. Data dibaca dan disimpan melalui GET/POST/PATCH/DELETE `/api/master`; harga jual produk diatur pada setiap transaksi POS. Tidak perlu migrasi tambahan.
 
 Stok pada form edit merupakan saldo absolut, bukan penambahan. Perubahan stok atau data sejak form dibuka akan menghasilkan HTTP 409, menggunakan versi baris PostgreSQL (`xmin`). Muat ulang daftar lalu buka Edit kembali agar tidak menimpa transaksi baru. Penyesuaian manual stok belum memiliki jurnal audit.
 
@@ -122,7 +126,7 @@ Koneksi TablePlus lokal: pilih PostgreSQL; Name `HomePOS`, Host `127.0.0.1`, Por
 
 ## Rekap barang dan uang
 
-Halaman `/rekap` dan GET `/api/rekap?from=YYYY-MM-DD&to=YYYY-MM-DD&page=1` menampilkan agregat seluruh periode (inklusif) dan riwayat 50 kejadian per halaman. POS selesai dihitung sebagai uang masuk; pembelian selesai sebagai uang keluar, dikelompokkan per metode bayar. Nota pabrik selesai ikut pendapatan pada tanggal selesai, termasuk data lama yang belum memiliki metode bayar. Kartu nilai nota merupakan rincian dari pendapatan, bukan tambahan. Selisih bukan saldo akhir kas atau laba.
+Halaman `/rekap` dan GET `/api/rekap?from=YYYY-MM-DD&to=YYYY-MM-DD&page=1` menampilkan agregat seluruh periode (inklusif), rincian produk, dan riwayat 50 kejadian per halaman. Tampilan barang dipisah menjadi Minuman dan Plastik. Minuman menampilkan jumlah serta nilai jual setiap produk per pembeli dan hari (transaksi tanpa nama pembeli disebut Umum). Plastik menampilkan berat masuk per pemasok dan berat kirim ke pabrik beserta berat diterima dan status nota. POS selesai dihitung sebagai uang masuk; pembelian selesai sebagai uang keluar, dikelompokkan per metode bayar. Nota pabrik selesai ikut pendapatan pada tanggal selesai, termasuk data lama yang belum memiliki metode bayar. Kartu nilai nota merupakan rincian dari pendapatan, bukan tambahan. Selisih bukan saldo akhir kas atau laba.
 
 Pergerakan barang memakai tanggal transaksi: minuman keluar berdasarkan jumlah, plastik masuk berdasarkan berat pembelian, plastik keluar berdasarkan berat kirim (termasuk pengiriman yang menunggu nota). Nota memakai tanggal selesai dan tidak menimbulkan arus stok baru. Transaksi batal dikecualikan. Stok awal dan edit stok manual tidak dapat direkonstruksi karena belum ada jurnal mutasi; rekap ini hanya mencakup transaksi. Jumlah pengiriman menunggu merupakan status saat ini untuk pengiriman yang berangkat dalam periode terpilih, bukan status historis di akhir periode.
 

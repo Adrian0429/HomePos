@@ -10,6 +10,7 @@ const item = z.discriminatedUnion('kind', [
   z.object({kind:z.literal('plastik'),name:z.string().trim().min(1).max(120),stock:decimal(2)})
 ]);
 const edit = z.object({id,version:z.string().regex(/^\d+$/),item});
+const remove = z.object({kind:z.enum(['product','plastik']),id,version:z.string().regex(/^\d+$/)});
 export async function GET() {
   return endpoint(async () => {
     const [products,plastik,brands] = await Promise.all([
@@ -53,4 +54,28 @@ export async function POST(request:Request) {
 }
 export async function PATCH(request:Request) {
   return endpoint(async()=>{const data=edit.parse(await request.json());return save(data.item,data);});
+}
+export async function DELETE(request:Request) {
+  return endpoint(async()=>{
+    const data=remove.parse(await request.json());
+    return atomic(async db=>{
+      if(data.kind==='product') {
+        const current=await db.query('SELECT brand_id FROM product WHERE product_id=$1 AND xmin::text=$2 FOR UPDATE',[data.id,data.version]);
+        if(!current.rowCount) throw new BusinessError('Data telah berubah atau tidak ditemukan. Muat ulang daftar.',409);
+        const used=await db.query('SELECT 1 FROM detail_transaksi_product WHERE product_id=$1 LIMIT 1',[data.id]);
+        if(used.rowCount) throw new BusinessError('Produk sudah tercatat dalam transaksi dan tidak dapat dihapus.',409);
+        const deleted=await db.query('DELETE FROM product WHERE product_id=$1 AND xmin::text=$2',[data.id,data.version]);
+        if(!deleted.rowCount) throw new BusinessError('Data berubah saat dihapus. Muat ulang daftar.',409);
+        await db.query('DELETE FROM brand b WHERE b.brand_id=$1 AND NOT EXISTS(SELECT 1 FROM product p WHERE p.brand_id=b.brand_id)',[current.rows[0].brand_id]);
+      } else {
+        const current=await db.query('SELECT 1 FROM plastik WHERE plastik_id=$1 AND xmin::text=$2 FOR UPDATE',[data.id,data.version]);
+        if(!current.rowCount) throw new BusinessError('Data telah berubah atau tidak ditemukan. Muat ulang daftar.',409);
+        const used=await db.query('SELECT 1 FROM detail_transaksi_plastik WHERE plastik_id=$1 LIMIT 1',[data.id]);
+        if(used.rowCount) throw new BusinessError('Plastik sudah tercatat dalam transaksi dan tidak dapat dihapus.',409);
+        const deleted=await db.query('DELETE FROM plastik WHERE plastik_id=$1 AND xmin::text=$2',[data.id,data.version]);
+        if(!deleted.rowCount) throw new BusinessError('Data berubah saat dihapus. Muat ulang daftar.',409);
+      }
+      return {deleted:true};
+    });
+  });
 }

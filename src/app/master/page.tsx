@@ -49,6 +49,16 @@ export default function Master() {
     }catch(e){setMessage(saved?'Data tersimpan, tetapi daftar gagal dimuat ulang. Klik Muat ulang daftar; jangan simpan ulang.':(e as Error).message);}
     finally{saving.current=false;setBusy(false);}
   }
+  async function removeItem(itemKind:Kind,id:number,version:string,name:string) {
+    if(!window.confirm(`Hapus ${name}? Data yang sudah dipakai transaksi tidak dapat dihapus.`))return;
+    setBusy(true);setMessage('');
+    try {
+      await request({method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:itemKind,id,version})});
+      if(draft.id===id&&draft.kind===itemKind)setDraft(blank(itemKind));
+      setMessage(`${name} berhasil dihapus.`);await refresh();
+    }catch(e){setMessage((e as Error).message);}
+    finally{setBusy(false);}
+  }
   const products=catalog.products.filter(p=>`${p.product_name} ${p.brand_name}`.toLowerCase().includes(search.toLowerCase()));
   const plastics=catalog.plastik.filter(p=>p.plastik_name.toLowerCase().includes(search.toLowerCase()));
   return <main className="mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
@@ -68,8 +78,8 @@ export default function Master() {
         {!loading&&!loaded&&<p className="mt-5 text-red-700">Daftar gagal dimuat. Coba muat ulang.</p>}
         {loaded&&<div tabIndex={0} role="region" aria-label="Daftar barang, dapat digulir" className="table-scroll mt-5"><table className="w-full text-left text-sm"><caption className="sr-only">Daftar {kind==='product'?'produk minuman':'jenis plastik'}</caption>
           <thead className="border-b border-slate-200 text-slate-500"><tr><th className="p-2">Nama</th>{kind==='product'&&<><th className="p-2">Harga modal</th></>}<th className="p-2">Stok</th><th className="p-2">Aksi</th></tr></thead>
-          <tbody>{kind==='product'?products.map(p=><tr key={p.product_id} className="border-b border-slate-100"><td className="p-2"><span className="font-semibold">{p.product_name}</span><span className="block text-xs text-slate-500">{p.brand_name}</span></td><td className="whitespace-nowrap p-2">{rupiah(scaled(p.price_product,2))}</td><td className="whitespace-nowrap p-2">{p.stok} unit</td><td className="p-2"><button type="button" disabled={busy} aria-label={`Edit ${p.product_name}`} onClick={()=>editProduct(p)}>Edit</button></td></tr>)
-            :plastics.map(p=><tr key={p.plastik_id} className="border-b border-slate-100"><td className="p-2 font-semibold">{p.plastik_name}</td><td className="whitespace-nowrap p-2">{decimalDisplay(p.stok)} kg</td><td className="p-2"><button type="button" disabled={busy} aria-label={`Edit ${p.plastik_name}`} onClick={()=>editPlastic(p)}>Edit</button></td></tr>)}</tbody>
+          <tbody>{kind==='product'?products.map(p=><tr key={p.product_id} className="border-b border-slate-100"><td className="p-2"><span className="font-semibold">{p.product_name}</span><span className="block text-xs text-slate-500">{p.brand_name}</span></td><td className="whitespace-nowrap p-2">{rupiah(scaled(p.price_product,2))}</td><td className="whitespace-nowrap p-2">{p.stok} unit</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" disabled={busy} aria-label={`Edit ${p.product_name}`} onClick={()=>editProduct(p)}>Edit</button><button type="button" className="delete-button" disabled={busy} aria-label={`Hapus ${p.product_name}`} onClick={()=>void removeItem('product',p.product_id,p.version,p.product_name)}>Hapus</button></div></td></tr>)
+            :plastics.map(p=><tr key={p.plastik_id} className="border-b border-slate-100"><td className="p-2 font-semibold">{p.plastik_name}</td><td className="whitespace-nowrap p-2">{decimalDisplay(p.stok)} kg</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" disabled={busy} aria-label={`Edit ${p.plastik_name}`} onClick={()=>editPlastic(p)}>Edit</button><button type="button" className="delete-button" disabled={busy} aria-label={`Hapus ${p.plastik_name}`} onClick={()=>void removeItem('plastik',p.plastik_id,p.version,p.plastik_name)}>Hapus</button></div></td></tr>)}</tbody>
         </table>{!(kind==='product'?products.length:plastics.length)&&<p className="py-6 text-slate-500">{search?'Tidak ada barang yang cocok.':'Belum ada barang. Tambahkan melalui form di samping.'}</p>}</div>}
       </section>
       <form ref={form} onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-4">
