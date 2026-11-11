@@ -13,7 +13,7 @@ export default function LoginPage() {
       const response = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:form.get('username'),password:form.get('password')})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Login gagal');
-      router.replace('/'); router.refresh();
+      router.replace('/pos'); router.refresh();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
