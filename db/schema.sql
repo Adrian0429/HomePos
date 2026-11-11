@@ -68,4 +68,18 @@ CREATE INDEX product_brand_idx ON product(brand_id);
 CREATE INDEX transaksi_method_idx ON transaksi(method_id);
 CREATE INDEX detail_product_product_idx ON detail_transaksi_product(product_id);
 CREATE INDEX detail_plastik_plastik_idx ON detail_transaksi_plastik(plastik_id);
+CREATE TABLE app_user (
+ user_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ username VARCHAR(80) NOT NULL UNIQUE,
+ password_salt TEXT NOT NULL,
+ password_hash TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE app_session (
+ session_hash TEXT PRIMARY KEY,
+ user_id INT NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+ expires_at TIMESTAMPTZ NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX app_session_expiry_idx ON app_session(expires_at);
 COMMIT;

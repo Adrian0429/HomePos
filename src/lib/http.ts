@@ -1,6 +1,11 @@
 import { ZodError } from 'zod';
 import { BusinessError } from './validation';
+import { cookies } from 'next/headers';
+import { isAuthenticated } from './session';
 export async function endpoint(action: () => Promise<unknown>, status = 200) {
+  const cookieStore = await cookies();
+  if (!await isAuthenticated(cookieStore.get('homepos_session')?.value))
+    return Response.json({error:'Sesi login diperlukan'}, {status:401});
   try { return Response.json(await action(), {status}); }
   catch (error) {
     if (error instanceof ZodError) return Response.json({error:'Input tidak valid', details:error.issues}, {status:400});

@@ -20,6 +20,10 @@ Kerangka Next.js App Router + TypeScript + Tailwind CSS + PostgreSQL. Backend me
 6. Salin `.env.example` menjadi `.env.local` lalu sesuaikan `DATABASE_URL`.
 7. `npm run dev`, buka http://localhost:3000.
 
+## Login admin
+
+Halaman aplikasi dan API memerlukan sesi login. Jalankan `npm run db:migrate` setelah schema dibuat; migrasi membuat tabel autentikasi dan menyemai akun awal `Admin` / `Admin123`. Password disimpan sebagai hash scrypt dan sesi disimpan sebagai token acak yang hanya di-cookie HttpOnly. Migrasi bisa dijalankan berulang, tetapi akan mereset password akun Admin ke nilai awal tersebut.
+
 Skema dijalankan sekali pada database baru. Nama tabel/kolom menggunakan snake_case dengan pemetaan langsung ke rancangan awal. Primary key memakai identity. Jangan menjalankan seed contoh ke database bisnis aktif.
 
 ## Deploy otomatis
