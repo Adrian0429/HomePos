@@ -19,11 +19,11 @@ sudo -n systemctl restart homepos
 
 # systemd restarts asynchronously; give Next.js time to bind its local port.
 for attempt in {1..30}; do
-  if curl --fail --silent http://127.0.0.1:3000/api/catalog >/dev/null; then
+  if curl --fail --silent http://127.0.0.1:3000/login >/dev/null; then
     break
   fi
   sleep 1
 done
-curl --fail --silent --show-error http://127.0.0.1:3000/api/catalog >/dev/null
+curl --fail --silent --show-error http://127.0.0.1:3000/login >/dev/null
 
 echo "HomePOS deployed from $(git rev-parse --short HEAD)"
