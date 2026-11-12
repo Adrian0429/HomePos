@@ -7,7 +7,9 @@ export type ReceiptData = {
   number:string;
   date:string;
   customer:string;
-  items:{name:string;quantity:number;price:string;subtotal:string}[];
+  title?:string;
+  partyLabel?:string;
+  items:{name:string;quantity:string|number;price:string;subtotal:string}[];
   total:string;
 };
 
@@ -48,9 +50,9 @@ function wrap(value:string,width=32) {
 function receiptBytes(data:ReceiptData) {
   const out:number[]=[ESC,0x40,ESC,0x61,0x01];
   out.push(ESC,0x45,0x01);line(out,'SEMI JAYA');out.push(ESC,0x45,0x00);
-  line(out,'KASIR MINUMAN');out.push(ESC,0x61,0x00);
+  line(out,data.title||'KASIR MINUMAN');out.push(ESC,0x61,0x00);
   line(out,'='.repeat(32));line(out,columns('No. Transaksi',`#${data.number}`));line(out,columns('Tanggal',data.date));
-  line(out,columns('Pembeli',data.customer||'Umum'));line(out,'-'.repeat(32));
+  line(out,columns(data.partyLabel||'Pembeli',data.customer||'Umum'));line(out,'-'.repeat(32));
   for(const [index,item] of data.items.entries()){
     if(index>0) line(out,'');
     out.push(ESC,0x45,0x01);

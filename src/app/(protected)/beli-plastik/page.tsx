@@ -2,20 +2,51 @@
 import MoneyInput from '@/components/money-input';
 import CreatableSelect from '@/components/creatable-select';
 import { useState } from 'react';
-import { decimalDisplay, lineTotal, OperationFields, OperationStatus, rupiah, useOperation } from '@/components/operation';
+import { decimalDisplay, lineTotal, OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
+import PrinterControl from '@/components/printer-control';
+import { sendReceipt, usePrintAgent, type ReceiptData } from '@/lib/print';
 type Line={plastikId:string;berat:string;hargaSatuan:string};
 const empty=():Line=>({plastikId:'',berat:'',hargaSatuan:''});
 export default function Purchase() {
   const o=useOperation();
+  const printer=usePrintAgent();
   const [lines,setLines]=useState<Line[]>([empty()]);
   const [supplierName,setSupplierName]=useState('');
+  const [pendingReceipt,setPendingReceipt]=useState<ReceiptData|null>(null);
+  const [printError,setPrintError]=useState('');
   const total=lines.reduce((sum,l)=>sum+lineTotal(l.berat,l.hargaSatuan),0n);
   function update(index:number,field:keyof Line,value:string){setLines(lines.map((l,i)=>i===index?{...l,[field]:value}:l));}
-  return <main className="mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
-    <p className="mb-2 text-sm text-emerald-700">Gudang / Pembelian</p><h1 className="text-3xl font-bold">Beli plastik dari pengepul</h1>
-    <p className="mb-7 mt-3 text-slate-600">Masukkan barang per baris. Stok bertambah sesuai berat pembelian.</p><OperationStatus operation={o}/>
+  async function retryPrint() {
+    if(!pendingReceipt)return;
+    try { await sendReceipt(pendingReceipt,printer.selected);setPendingReceipt(null);setPrintError('Nota berhasil dikirim ke printer.'); }
+    catch(e) { setPrintError(`Nota belum tercetak: ${(e as Error).message}`); }
+  }
+  function submitPurchase() {
+    const items=lines.map(line=>{
+      const plastic=o.catalog.plastik.find(p=>p.plastik_id===Number(line.plastikId));
+      return {name:plastic?.plastik_name||'Plastik',quantity:`${decimalDisplay(line.berat)} kg`,price:`${rupiah(scaled(line.hargaSatuan,2))}/kg`,subtotal:rupiah(lineTotal(line.berat,line.hargaSatuan))};
+    });
+    const receiptBase={title:'PEMBELIAN PLASTIK',partyLabel:'Supplier',date:o.date,customer:supplierName.trim(),items};
+    void o.save({type:'Beli Plastik',transactionDate:o.date,methodId:Number(o.method),supplierName:supplierName.trim(),items:lines.map(l=>({...l,plastikId:Number(l.plastikId)}))},()=>{setLines([empty()]);setSupplierName('');},true,async saved=>{
+      const receipt={...receiptBase,number:String(saved.transaksi_id),total:rupiah(scaled(saved.total_nominal,2))};
+      setPendingReceipt(receipt);setPrintError('');
+      try {await sendReceipt(receipt,printer.selected);setPendingReceipt(null);setPrintError('Nota berhasil dikirim ke printer.');}
+      catch(e) {setPrintError(`Nota belum tercetak: ${(e as Error).message}`);throw e;}
+    });
+  }
+  return <main className="pos-page mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
+    <header className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+      <div className="shrink-0"><p className="mb-2 text-sm text-emerald-700">Gudang / Pembelian</p><h1 className="text-3xl font-bold">Beli plastik dari pengepul</h1>
+        <p className="mt-2 text-slate-600">Masukkan barang per baris. Stok bertambah sesuai berat pembelian.</p>
+      </div>
+      <div className="w-full lg:max-w-[820px] lg:flex-1"><PrinterControl printer={printer} className="mb-0"/></div>
+    </header>
+    <OperationStatus operation={o}/>
+    {printError&&<div role="status" className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${pendingReceipt?'border-amber-300 bg-amber-50 text-amber-900':'border-emerald-200 bg-white text-emerald-800'}`}>
+      <span>{printError}</span>{pendingReceipt&&<button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang nota #{pendingReceipt.number}</button>}
+    </div>}
     {o.loaded&&!o.catalog.plastik.length&&<p className="mb-5 text-amber-800">Belum ada jenis plastik. Isi master plastik terlebih dahulu.</p>}
-    <form onSubmit={e=>{e.preventDefault();void o.save({type:'Beli Plastik',transactionDate:o.date,methodId:Number(o.method),supplierName:supplierName.trim(),items:lines.map(l=>({...l,plastikId:Number(l.plastikId)}))},()=>{setLines([empty()]);setSupplierName('');});}}>
+    <form onSubmit={e=>{e.preventDefault();submitPurchase();}}>
       <fieldset disabled={o.busy||!o.loaded} className="space-y-5"><OperationFields operation={o}/>
         <label>Supplier / pengepul
           <CreatableSelect ariaLabel="supplier atau pengepul" required value={supplierName} onChange={setSupplierName}
