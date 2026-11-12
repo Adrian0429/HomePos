@@ -43,9 +43,15 @@ export default function POS() {
     });
   }
   return <main className="pos-page mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
-    <p className="mb-2 text-sm text-emerald-700">Warung / Penjualan</p><h1 className="text-3xl font-bold">Kasir minuman</h1>
-    <p className="mb-4 mt-2 text-slate-600">Pilih produk, atur jumlah, simpan pembayaran, lalu cetak struk 58 mm.</p>
-    <PrinterControl printer={printer}/>
+    <header className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+      <div className="shrink-0">
+        <p className="mb-2 text-sm text-emerald-700">Warung / Penjualan</p>
+        <h1 className="text-3xl font-bold">Kasir minuman</h1>
+      </div>
+      <div className="w-full lg:max-w-[820px] lg:flex-1">
+        <PrinterControl printer={printer} className="mb-0"/>
+      </div>
+    </header>
     <OperationStatus operation={o}/>
     {printError&&<div role="status" className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${pendingReceipt?'border-amber-300 bg-amber-50 text-amber-900':'border-emerald-200 bg-white text-emerald-800'}`}>
       <span>{printError}</span>{pendingReceipt&&<button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang struk #{pendingReceipt.number}</button>}

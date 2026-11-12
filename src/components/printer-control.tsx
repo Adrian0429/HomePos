@@ -2,8 +2,8 @@
 import type { usePrintAgent } from '@/lib/print';
 type PrinterState=ReturnType<typeof usePrintAgent>;
 
-export default function PrinterControl({printer}:{printer:PrinterState}) {
-  return <section className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3" aria-label="Status printer kasir">
+export default function PrinterControl({printer,className='mb-4'}:{printer:PrinterState;className?:string}) {
+  return <section className={`${className} flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3`} aria-label="Status printer kasir">
     <span className={`inline-flex items-center gap-2 text-sm font-semibold ${printer.online?'text-emerald-800':'text-amber-800'}`}>
       <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${printer.online?'bg-emerald-600':'bg-amber-500'}`}/>
       {printer.checking?'Memeriksa printer…':!printer.online?'Printer lokal tidak terhubung':printer.printers.length?'Printer lokal terhubung':'Client terhubung, printer tidak ditemukan'}
