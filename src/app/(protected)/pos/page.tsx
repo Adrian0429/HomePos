@@ -4,7 +4,7 @@ import MoneyInput from '@/components/money-input';
 import CreatableSelect from '@/components/creatable-select';
 import { OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
 import PrinterControl from '@/components/printer-control';
-import ReceiptCopyStatus from '@/components/receipt-copy-status';
+import ReceiptCopyModal from '@/components/receipt-copy-modal';
 import { usePrintAgent, useReceiptCopies, type ReceiptData } from '@/lib/print';
 export default function POS() {
   const o=useOperation();
@@ -46,7 +46,7 @@ export default function POS() {
       </div>
     </header>
     <OperationStatus operation={o}/>
-    <ReceiptCopyStatus copies={copies} printer={printer}/>
+    <ReceiptCopyModal copies={copies} printer={printer}/>
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4"><h2 className="mb-2 text-lg font-semibold">Daftar minuman</h2>
         <label>Cari produk atau merek<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Contoh: Air Mineral"/></label>

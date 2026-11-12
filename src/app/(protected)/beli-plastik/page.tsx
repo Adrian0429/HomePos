@@ -4,7 +4,7 @@ import CreatableSelect from '@/components/creatable-select';
 import { useState } from 'react';
 import { decimalDisplay, lineTotal, OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
 import PrinterControl from '@/components/printer-control';
-import ReceiptCopyStatus from '@/components/receipt-copy-status';
+import ReceiptCopyModal from '@/components/receipt-copy-modal';
 import { usePrintAgent, useReceiptCopies, type ReceiptData } from '@/lib/print';
 type Line={plastikId:string;berat:string;hargaSatuan:string};
 const empty=():Line=>({plastikId:'',berat:'',hargaSatuan:''});
@@ -36,7 +36,7 @@ export default function Purchase() {
       <div className="w-full lg:max-w-[820px] lg:flex-1"><PrinterControl printer={printer} className="mb-0"/></div>
     </header>
     <OperationStatus operation={o}/>
-    <ReceiptCopyStatus copies={copies} printer={printer}/>
+    <ReceiptCopyModal copies={copies} printer={printer}/>
     {o.loaded&&!o.catalog.plastik.length&&<p className="mb-5 text-amber-800">Belum ada jenis plastik. Isi master plastik terlebih dahulu.</p>}
     <form onSubmit={e=>{e.preventDefault();submitPurchase();}}>
       <fieldset disabled={o.busy||!o.loaded||copies.blocked} className="space-y-5"><OperationFields operation={o}/>
