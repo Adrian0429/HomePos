@@ -53,7 +53,8 @@ function receiptBytes(data:ReceiptData) {
   line(out,columns('Pembeli',data.customer||'Umum'));line(out,'-'.repeat(32));
   for(const item of data.items){
     for(const part of wrap(item.name,32)) line(out,part);
-    line(out,columns(`${item.quantity} x ${item.price}`,item.subtotal));
+    for(const part of wrap(`${item.quantity} x ${item.price}`,32)) line(out,part);
+    for(const part of wrap(`Jumlah: ${item.subtotal}`,32)) line(out,part);
   }
   line(out,'-'.repeat(32));out.push(ESC,0x45,0x01);line(out,columns('TOTAL',data.total));out.push(ESC,0x45,0x00);
   line(out,'');out.push(ESC,0x61,0x01);line(out,'Terima kasih');line(out,'');line(out,'');line(out,'');
