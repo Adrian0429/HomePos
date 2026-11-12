@@ -33,7 +33,7 @@ export default function POS() {
       const subtotal=scaled(item.hargaSatuan,2)*BigInt(Number(item.quantity));
       return {name:product.product_name,quantity:Number(item.quantity),price:rupiah(scaled(item.hargaSatuan,2)),subtotal:rupiah(subtotal)};
     });
-    const receiptBase={date:o.date,customer:customerName.trim()||'Umum',payment:o.catalog.methods.find(m=>m.method_id===Number(o.method))?.payment_method||'—',items};
+    const receiptBase={date:o.date,customer:customerName.trim()||'Umum',items};
     const body={type:'Jual Minuman',transactionDate:o.date,methodId:Number(o.method),customerName:customerName.trim()||undefined,items:cart.map(i=>({productId:i.productId,jumlah:Number(i.quantity),hargaSatuan:i.hargaSatuan}))};
     void o.save(body,()=>{setCart([]);setCustomerName('');},true,async saved=>{
       const receipt={...receiptBase,number:String(saved.transaksi_id),total:rupiah(scaled(saved.total_nominal,2))};
