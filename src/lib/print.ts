@@ -51,10 +51,13 @@ function receiptBytes(data:ReceiptData) {
   line(out,'KASIR MINUMAN');out.push(ESC,0x61,0x00);
   line(out,'='.repeat(32));line(out,columns('No. Transaksi',`#${data.number}`));line(out,columns('Tanggal',data.date));
   line(out,columns('Pembeli',data.customer||'Umum'));line(out,'-'.repeat(32));
-  for(const item of data.items){
+  for(const [index,item] of data.items.entries()){
+    if(index>0) line(out,'');
+    out.push(ESC,0x45,0x01);
     for(const part of wrap(item.name,32)) line(out,part);
+    out.push(ESC,0x45,0x00);
     for(const part of wrap(`${item.quantity} x ${item.price}`,32)) line(out,part);
-    for(const part of wrap(`Jumlah: ${item.subtotal}`,32)) line(out,part);
+    for(const part of wrap(`Subtotal: ${item.subtotal}`,32)) line(out,part);
   }
   line(out,'-'.repeat(32));out.push(ESC,0x45,0x01);line(out,columns('TOTAL',data.total));out.push(ESC,0x45,0x00);
   line(out,'');out.push(ESC,0x61,0x01);line(out,'Terima kasih');line(out,'');line(out,'');line(out,'');
