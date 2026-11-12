@@ -9,6 +9,7 @@ export type ReceiptData = {
   customer:string;
   title?:string;
   partyLabel?:string;
+  copyLabel?:string;
   items:{name:string;quantity:string|number;price:string;subtotal:string}[];
   total:string;
 };
@@ -50,7 +51,9 @@ function wrap(value:string,width=32) {
 function receiptBytes(data:ReceiptData) {
   const out:number[]=[ESC,0x40,ESC,0x61,0x01];
   out.push(ESC,0x45,0x01);line(out,'SEMI JAYA');out.push(ESC,0x45,0x00);
-  line(out,data.title||'KASIR MINUMAN');out.push(ESC,0x61,0x00);
+  line(out,data.title||'KASIR MINUMAN');
+  if(data.copyLabel) line(out,data.copyLabel);
+  out.push(ESC,0x61,0x00);
   line(out,'='.repeat(32));line(out,columns('No. Transaksi',`#${data.number}`));line(out,columns('Tanggal',data.date));
   line(out,columns(data.partyLabel||'Pembeli',data.customer||'Umum'));line(out,'-'.repeat(32));
   for(const [index,item] of data.items.entries()){
@@ -100,4 +103,71 @@ export function usePrintAgent() {
   useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),5000);return()=>clearInterval(timer);},[refresh]);
   function choose(name:string){setSelected(name);if(name)window.localStorage.setItem('homepos-printer',name);else window.localStorage.removeItem('homepos-printer');}
   return {online,printers,selected,checking,refresh,choose};
+}
+
+type ReceiptCopyStage='buyer'|'cut'|'seller';
+const pendingCopiesKey='homepos-pending-receipt-copies';
+
+export function useReceiptCopies(printer:ReturnType<typeof usePrintAgent>) {
+  const [receipt,setReceipt]=useState<ReceiptData|null>(null);
+  const [stage,setStage]=useState<ReceiptCopyStage|null>(null);
+  const [message,setMessage]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [ready,setReady]=useState(false);
+
+  useEffect(()=>{
+    try {
+      const saved=window.localStorage.getItem(pendingCopiesKey);
+      if(saved){
+        const parsed=JSON.parse(saved) as {receipt?:ReceiptData;stage?:ReceiptCopyStage};
+        if(parsed.receipt&&['buyer','cut','seller'].includes(parsed.stage||'')){
+          setReceipt(parsed.receipt);setStage(parsed.stage!);
+          setMessage(parsed.stage==='cut'
+            ?'Salinan pembeli sudah tercetak. Potong nota sebelum mencetak salinan penjual.'
+            :`Salinan ${parsed.stage==='buyer'?'pembeli':'penjual'} belum selesai. Tekan tombol untuk mencoba mencetaknya lagi.`);
+        }
+      }
+    } catch { window.localStorage.removeItem(pendingCopiesKey); }
+    finally { setReady(true); }
+  },[]);
+
+  useEffect(()=>{
+    if(!ready)return;
+    try {
+      if(receipt&&stage) window.localStorage.setItem(pendingCopiesKey,JSON.stringify({receipt,stage}));
+      else window.localStorage.removeItem(pendingCopiesKey);
+    } catch { /* Printing flow remains usable if browser storage is unavailable. */ }
+  },[receipt,stage,ready]);
+
+  async function printCopy(data:ReceiptData,copy:'buyer'|'seller') {
+    setBusy(true);setStage(copy);
+    setMessage(`Mengirim salinan ${copy==='buyer'?'pembeli':'penjual'} ke printer…`);
+    try {
+      await sendReceipt({...data,copyLabel:copy==='buyer'?'SALINAN PEMBELI':'SALINAN PENJUAL'},printer.selected);
+      if(copy==='buyer'){
+        setStage('cut');setMessage('Salinan pembeli sudah tercetak. Potong nota sampai terpisah, lalu cetak salinan penjual.');
+      }else{
+        setReceipt(null);setStage(null);setMessage('Salinan pembeli dan penjual selesai dicetak.');
+      }
+    } catch(error) {
+      setMessage(`Salinan ${copy==='buyer'?'pembeli':'penjual'} belum tercetak: ${(error as Error).message}`);
+    } finally { setBusy(false); }
+  }
+
+  async function start(data:ReceiptData) {
+    setReceipt(data);setStage('buyer');
+    await printCopy(data,'buyer');
+  }
+
+  async function retry() {
+    if(!receipt||busy||(stage!=='buyer'&&stage!=='seller'))return;
+    await printCopy(receipt,stage);
+  }
+
+  async function printSellerCopy() {
+    if(!receipt||busy||stage!=='cut')return;
+    await printCopy(receipt,'seller');
+  }
+
+  return {stage,message,busy,ready,blocked:!ready||stage!==null,start,retry,printSellerCopy};
 }

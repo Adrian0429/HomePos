@@ -4,24 +4,20 @@ import CreatableSelect from '@/components/creatable-select';
 import { useState } from 'react';
 import { decimalDisplay, lineTotal, OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
 import PrinterControl from '@/components/printer-control';
-import { sendReceipt, usePrintAgent, type ReceiptData } from '@/lib/print';
+import ReceiptCopyStatus from '@/components/receipt-copy-status';
+import { usePrintAgent, useReceiptCopies, type ReceiptData } from '@/lib/print';
 type Line={plastikId:string;berat:string;hargaSatuan:string};
 const empty=():Line=>({plastikId:'',berat:'',hargaSatuan:''});
 export default function Purchase() {
   const o=useOperation();
   const printer=usePrintAgent();
+  const copies=useReceiptCopies(printer);
   const [lines,setLines]=useState<Line[]>([empty()]);
   const [supplierName,setSupplierName]=useState('');
-  const [pendingReceipt,setPendingReceipt]=useState<ReceiptData|null>(null);
-  const [printError,setPrintError]=useState('');
   const total=lines.reduce((sum,l)=>sum+lineTotal(l.berat,l.hargaSatuan),0n);
   function update(index:number,field:keyof Line,value:string){setLines(lines.map((l,i)=>i===index?{...l,[field]:value}:l));}
-  async function retryPrint() {
-    if(!pendingReceipt)return;
-    try { await sendReceipt(pendingReceipt,printer.selected);setPendingReceipt(null);setPrintError('Nota berhasil dikirim ke printer.'); }
-    catch(e) { setPrintError(`Nota belum tercetak: ${(e as Error).message}`); }
-  }
   function submitPurchase() {
+    if(copies.blocked)return;
     const items=lines.map(line=>{
       const plastic=o.catalog.plastik.find(p=>p.plastik_id===Number(line.plastikId));
       return {name:plastic?.plastik_name||'Plastik',quantity:`${decimalDisplay(line.berat)} kg`,price:`${rupiah(scaled(line.hargaSatuan,2))}/kg`,subtotal:rupiah(lineTotal(line.berat,line.hargaSatuan))};
@@ -29,9 +25,7 @@ export default function Purchase() {
     const receiptBase={title:'PEMBELIAN PLASTIK',partyLabel:'Supplier',date:o.date,customer:supplierName.trim(),items};
     void o.save({type:'Beli Plastik',transactionDate:o.date,methodId:Number(o.method),supplierName:supplierName.trim(),items:lines.map(l=>({...l,plastikId:Number(l.plastikId)}))},()=>{setLines([empty()]);setSupplierName('');},true,async saved=>{
       const receipt={...receiptBase,number:String(saved.transaksi_id),total:rupiah(scaled(saved.total_nominal,2))};
-      setPendingReceipt(receipt);setPrintError('');
-      try {await sendReceipt(receipt,printer.selected);setPendingReceipt(null);setPrintError('Nota berhasil dikirim ke printer.');}
-      catch(e) {setPrintError(`Nota belum tercetak: ${(e as Error).message}`);throw e;}
+      await copies.start(receipt);
     });
   }
   return <main className="pos-page mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
@@ -42,12 +36,10 @@ export default function Purchase() {
       <div className="w-full lg:max-w-[820px] lg:flex-1"><PrinterControl printer={printer} className="mb-0"/></div>
     </header>
     <OperationStatus operation={o}/>
-    {printError&&<div role="status" className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${pendingReceipt?'border-amber-300 bg-amber-50 text-amber-900':'border-emerald-200 bg-white text-emerald-800'}`}>
-      <span>{printError}</span>{pendingReceipt&&<button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang nota #{pendingReceipt.number}</button>}
-    </div>}
+    <ReceiptCopyStatus copies={copies} printer={printer}/>
     {o.loaded&&!o.catalog.plastik.length&&<p className="mb-5 text-amber-800">Belum ada jenis plastik. Isi master plastik terlebih dahulu.</p>}
     <form onSubmit={e=>{e.preventDefault();submitPurchase();}}>
-      <fieldset disabled={o.busy||!o.loaded} className="space-y-5"><OperationFields operation={o}/>
+      <fieldset disabled={o.busy||!o.loaded||copies.blocked} className="space-y-5"><OperationFields operation={o}/>
         <label>Supplier / pengepul
           <CreatableSelect ariaLabel="supplier atau pengepul" required value={supplierName} onChange={setSupplierName}
             options={o.catalog.suppliers.map(s=>s.supplier_name)} placeholder="Pilih supplier atau ketik nama baru"/>
@@ -73,7 +65,7 @@ export default function Purchase() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <button type="button" disabled={lines.length>=Math.min(o.catalog.plastik.length,100)} onClick={()=>setLines([...lines,empty()])}>+ Tambah baris</button>
-          <button type="submit" disabled={!o.catalog.methods.length||!o.catalog.plastik.length}>{o.busy?'Menyimpan…':'Simpan pembelian'}</button>
+          <button type="submit" disabled={copies.blocked||!o.catalog.methods.length||!o.catalog.plastik.length}>{o.busy?'Menyimpan…':'Simpan pembelian'}</button>
         </div>
         <p className="text-sm text-slate-500">Subtotal = berat × harga per kg. Gunakan Tab untuk berpindah sel.</p>
       </fieldset>
