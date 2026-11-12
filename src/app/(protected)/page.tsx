@@ -1,5 +1,6 @@
 'use client';
 import MoneyInput from '@/components/money-input';
+import SearchableSelect from '@/components/searchable-select';
 import { useEffect, useState, type FormEvent } from 'react';
 import { decimalDisplay, lineTotal, rupiah } from '@/components/operation';
 type Plastic = {plastik_id:number; plastik_name:string; stok:string};
@@ -82,9 +83,8 @@ export default function Home() {
               <thead className="bg-emerald-50 text-left"><tr><th scope="col" className="w-12">No.</th><th scope="col">Jenis plastik</th><th scope="col" className="w-56">Berat kirim (kg)</th><th scope="col" className="w-24">Aksi</th></tr></thead>
               <tbody>{lines.map((line,index) => <tr key={index}>
                 <th scope="row" className="bg-slate-50 text-center font-normal">{index+1}</th>
-                <td><select aria-label={`Jenis plastik baris ${index+1}`} required value={line.plastikId} onChange={e => setLines(lines.map((l,i) => i===index ? {...l,plastikId:e.target.value}:l))}>
-                  <option value="">Pilih plastik</option>{plastics.map(p => <option key={p.plastik_id} value={p.plastik_id} disabled={lines.some((l,i)=>i!==index&&l.plastikId===String(p.plastik_id))}>{p.plastik_name} · {decimalDisplay(p.stok)} kg tersedia</option>)}
-                </select></td>
+                <td><SearchableSelect ariaLabel={`Jenis plastik baris ${index+1}`} required value={line.plastikId} onChange={value=>setLines(lines.map((l,i) => i===index ? {...l,plastikId:value}:l))} placeholder="Ketik nama plastik…"
+                  options={plastics.map(p=>({value:String(p.plastik_id),label:`${p.plastik_name} · ${decimalDisplay(p.stok)} kg tersedia`,disabled:lines.some((l,i)=>i!==index&&l.plastikId===String(p.plastik_id))}))}/></td>
                 <td><input aria-label={`Berat kirim baris ${index+1} (kg)`} required type="number" min="0.01" step="0.01" max="999999999" value={line.beratKirim} onChange={e => setLines(lines.map((l,i) => i===index ? {...l,beratKirim:e.target.value}:l))}/></td>
                 <td><button type="button" className="delete-button" aria-label={`Hapus baris ${index+1}`} onClick={() => setLines(previous=>previous.length===1?[{plastikId:'',beratKirim:''}]:previous.filter((_,i)=>i!==index))}>Hapus</button></td>
               </tr>)}</tbody>

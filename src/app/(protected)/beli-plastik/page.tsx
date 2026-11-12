@@ -1,6 +1,7 @@
 'use client';
 import MoneyInput from '@/components/money-input';
 import CreatableSelect from '@/components/creatable-select';
+import SearchableSelect from '@/components/searchable-select';
 import { useState } from 'react';
 import { decimalDisplay, lineTotal, OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
 import PrinterControl from '@/components/printer-control';
@@ -52,9 +53,8 @@ export default function Purchase() {
             </tr></thead>
             <tbody>{lines.map((line,index)=><tr key={index}>
               <th scope="row" className="bg-slate-50 text-center font-normal text-slate-500">{index+1}</th>
-              <td><select aria-label={`Jenis plastik baris ${index+1}`} required value={line.plastikId} onChange={e=>update(index,'plastikId',e.target.value)}>
-                <option value="">Pilih plastik</option>{o.catalog.plastik.map(p=><option key={p.plastik_id} value={p.plastik_id} disabled={lines.some((l,i)=>i!==index&&l.plastikId===String(p.plastik_id))}>{p.plastik_name} · stok {decimalDisplay(p.stok)} kg</option>)}
-              </select></td>
+              <td><SearchableSelect ariaLabel={`Jenis plastik baris ${index+1}`} required value={line.plastikId} onChange={value=>update(index,'plastikId',value)} placeholder="Ketik nama plastik…"
+                options={o.catalog.plastik.map(p=>({value:String(p.plastik_id),label:`${p.plastik_name} · stok ${decimalDisplay(p.stok)} kg`,disabled:lines.some((l,i)=>i!==index&&l.plastikId===String(p.plastik_id))}))}/></td>
               <td><input aria-label={`Berat baris ${index+1} (kg)`} required type="number" min="0.01" step="0.01" max="999999999" value={line.berat} onChange={e=>update(index,'berat',e.target.value)}/></td>
               <td><MoneyInput aria-label={`Harga baris ${index+1} per kg (Rp)`} required value={line.hargaSatuan} onValueChange={value=>update(index,'hargaSatuan',value)}/></td>
               <td className="whitespace-nowrap text-right font-medium tabular-nums"><output>{rupiah(lineTotal(line.berat,line.hargaSatuan))}</output></td>
