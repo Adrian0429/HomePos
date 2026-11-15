@@ -27,6 +27,12 @@ export default function POS() {
     try {await sendReceipt(pendingReceipt,printer.selected);setPendingReceipt(null);setPrintError('Struk berhasil dikirim ke printer.');}
     catch(e) {setPrintError(`Struk belum tercetak: ${(e as Error).message}`);}
   }
+  function ignorePrint() {
+    if(!pendingReceipt)return;
+    const number=pendingReceipt.number;
+    setPendingReceipt(null);setPrintError(`Pencetakan diabaikan. Transaksi #${number} tetap tersimpan.`);
+    o.setMessage(`Transaksi #${number} tersimpan. Pencetakan struk diabaikan.`);
+  }
   function submitSale() {
     const items=cart.map(item=>{
       const product=o.catalog.products.find(p=>p.product_id===item.productId)!;
@@ -54,7 +60,7 @@ export default function POS() {
     </header>
     <OperationStatus operation={o}/>
     {printError&&<div role="status" className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${pendingReceipt?'border-amber-300 bg-amber-50 text-amber-900':'border-emerald-200 bg-white text-emerald-800'}`}>
-      <span>{printError}</span>{pendingReceipt&&<button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang struk #{pendingReceipt.number}</button>}
+      <span>{printError}</span>{pendingReceipt&&<div className="flex gap-2"><button type="button" className="!bg-white !text-emerald-800 border border-emerald-800" onClick={ignorePrint}>Abaikan cetak</button><button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang struk #{pendingReceipt.number}</button></div>}
     </div>}
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
       <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4"><h2 className="mb-2 text-lg font-semibold">Daftar minuman</h2>

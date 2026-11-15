@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import MoneyInput from '@/components/money-input';
+import SearchableSelect from '@/components/searchable-select';
 import { OperationStatus, rupiah, scaled, today, useOperation } from '@/components/operation';
 type Line={productId:string;jumlah:string;hargaSatuan:string};
 const empty=():Line=>({productId:'',jumlah:'1',hargaSatuan:''});
@@ -21,7 +22,8 @@ export default function Restock(){
         <div tabIndex={0} role="region" aria-label="Rincian restok minuman, dapat digulir" className="table-scroll border border-slate-300 bg-white"><table className="purchase-sheet w-full min-w-[800px] border-collapse text-sm">
           <caption className="sr-only">Rincian restok minuman</caption><thead className="bg-emerald-50 text-left"><tr><th scope="col" className="w-12">No.</th><th scope="col">Produk minuman</th><th scope="col" className="w-32">Jumlah (unit)</th><th scope="col" className="w-48">Harga beli / unit (Rp)</th><th scope="col" className="w-48">Subtotal</th><th scope="col" className="w-24">Aksi</th></tr></thead>
           <tbody>{lines.map((line,index)=><tr key={index}><th scope="row" className="bg-slate-50 font-normal">{index+1}</th><td>
-            <select required aria-label={`Produk baris ${index+1}`} value={line.productId} onChange={e=>update(index,'productId',e.target.value)}><option value="">Pilih produk minuman</option>{o.catalog.products.map(p=><option key={p.product_id} value={p.product_id} disabled={lines.some((l,i)=>i!==index&&l.productId===String(p.product_id))}>{p.product_name}   -   {p.brand_name}</option>)}</select>
+            <SearchableSelect required ariaLabel={`Produk baris ${index+1}`} value={line.productId} onChange={value=>update(index,'productId',value)} placeholder="Ketik nama produk minuman…"
+              options={o.catalog.products.map(p=>({value:String(p.product_id),label:`${p.product_name} · ${p.brand_name}`,disabled:lines.some((l,i)=>i!==index&&l.productId===String(p.product_id))}))}/>
           </td><td><input required aria-label={`Jumlah baris ${index+1}`} type="number" min="1" max="1000000" step="1" value={line.jumlah} onChange={e=>update(index,'jumlah',e.target.value)}/></td>
           <td><MoneyInput required aria-label={`Harga beli baris ${index+1}`} value={line.hargaSatuan} onValueChange={value=>update(index,'hargaSatuan',value)}/></td>
           <td className="text-right whitespace-nowrap tabular-nums "><output>{rupiah(subtotal(line))}</output></td><td><button type="button" className="delete-button" aria-label={`Hapus baris ${index+1}`} onClick={()=>setLines(previous=>previous.length===1?[empty()]:previous.filter((_,i)=>i!==index))}>Hapus</button></td></tr>)}</tbody>

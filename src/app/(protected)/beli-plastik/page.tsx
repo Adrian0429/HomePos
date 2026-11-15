@@ -22,6 +22,12 @@ export default function Purchase() {
     try {await sendReceipt(pendingReceipt,printer.selected);setPendingReceipt(null);setPrintError('Nota berhasil dikirim ke printer.');}
     catch(e) {setPrintError(`Nota belum tercetak: ${(e as Error).message}`);}
   }
+  function ignorePrint() {
+    if(!pendingReceipt)return;
+    const number=pendingReceipt.number;
+    setPendingReceipt(null);setPrintError(`Pencetakan diabaikan. Pembelian #${number} tetap tersimpan.`);
+    o.setMessage(`Pembelian #${number} tersimpan. Pencetakan nota diabaikan.`);
+  }
   function submitPurchase() {
     const items=lines.map(line=>{
       const plastic=o.catalog.plastik.find(p=>p.plastik_id===Number(line.plastikId));
@@ -44,7 +50,7 @@ export default function Purchase() {
     </header>
     <OperationStatus operation={o}/>
     {printError&&<div role="status" className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${pendingReceipt?'border-amber-300 bg-amber-50 text-amber-900':'border-emerald-200 bg-white text-emerald-800'}`}>
-      <span>{printError}</span>{pendingReceipt&&<button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang nota #{pendingReceipt.number}</button>}
+      <span>{printError}</span>{pendingReceipt&&<div className="flex gap-2"><button type="button" className="!bg-white !text-emerald-800 border border-emerald-800" onClick={ignorePrint}>Abaikan cetak</button><button type="button" disabled={!printer.online||!printer.selected} onClick={()=>void retryPrint()}>Cetak ulang nota #{pendingReceipt.number}</button></div>}
     </div>}
     {o.loaded&&!o.catalog.plastik.length&&<p className="mb-5 text-amber-800">Belum ada jenis plastik. Isi master plastik terlebih dahulu.</p>}
     <form onSubmit={e=>{e.preventDefault();submitPurchase();}}>
