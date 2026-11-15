@@ -1,89 +1,76 @@
 import { z } from 'zod';
 import { atomic } from '@/lib/db';
 import { endpoint } from '@/lib/http';
+
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 const filter=z.object({from:z.iso.date(),to:z.iso.date(),page:z.coerce.number().int().min(1).max(100000).default(1)})
   .refine(v=>v.from<=v.to,'Tanggal awal harus sebelum atau sama dengan tanggal akhir');
+const pageSize=50;
+const goodsInCte=`WITH goods_in AS (
+  SELECT t.transaksi_id,to_char(t.transaction_date,'YYYY-MM-DD') AS date,'Minuman'::text AS category,
+    p.product_name AS product,'unit'::text AS unit,'—'::text AS party,d.jumlah::numeric AS quantity,
+    d.harga_satuan::numeric AS unit_price,d.subtotal::numeric AS subtotal
+  FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id) JOIN product p USING(product_id)
+  WHERE t.status='Selesai' AND t.type='Restok Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+  UNION ALL
+  SELECT t.transaksi_id,to_char(t.transaction_date,'YYYY-MM-DD'),'Plastik',p.plastik_name,'kg',
+    COALESCE(s.supplier_name,'—'),d.berat_diterima,d.harga_satuan,d.subtotal
+  FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
+  LEFT JOIN supplier s USING(supplier_id)
+  WHERE t.status='Selesai' AND t.type='Beli Plastik' AND t.transaction_date BETWEEN $1::date AND $2::date
+) `;
+
 export async function GET(request:Request){
   return endpoint(async()=>{
     const f=filter.parse(Object.fromEntries(new URL(request.url).searchParams));
     return atomic(async db=>{
-      // Satu snapshot agar ringkasan dan rincian konsisten saat kasir masih aktif.
       await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
       const args=[f.from,f.to];
-      const cash=await db.query(`SELECT COALESCE(m.payment_method,'Belum ditentukan') AS method,
-        COALESCE(SUM(t.total_nominal) FILTER(WHERE t.type IN ('Jual Minuman','Kirim Pabrik')),0)::text AS masuk,
-        COALESCE(SUM(t.total_nominal) FILTER(WHERE t.type IN ('Beli Plastik','Restok Minuman')),0)::text AS keluar
-        FROM transaksi t LEFT JOIN metode_bayar m USING(method_id)
-        WHERE t.status='Selesai'
-        AND (CASE WHEN t.type='Kirim Pabrik' THEN t.selesai_date ELSE t.transaction_date END) BETWEEN $1::date AND $2::date GROUP BY m.payment_method ORDER BY method`,args);
-      const goods=await db.query(`WITH movement AS (
-        SELECT 'Minuman' AS category,p.product_id AS id,p.product_name AS name,'unit' AS unit,
-          COALESCE(SUM(d.jumlah) FILTER(WHERE t.type='Restok Minuman'),0)::numeric AS masuk,
-          COALESCE(SUM(d.jumlah) FILTER(WHERE t.type='Jual Minuman'),0)::numeric AS keluar
-        FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id) JOIN product p USING(product_id)
-        WHERE t.status='Selesai' AND t.type IN ('Jual Minuman','Restok Minuman') AND t.transaction_date BETWEEN $1::date AND $2::date
-        GROUP BY p.product_id
-        UNION ALL
-        SELECT 'Plastik',p.plastik_id,p.plastik_name,'kg',
-          COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Beli Plastik'),0),
-          COALESCE(SUM(d.berat_kirim) FILTER(WHERE t.type='Kirim Pabrik'),0)
-        FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
-        WHERE t.status<>'Batal' AND t.transaction_date BETWEEN $1::date AND $2::date GROUP BY p.plastik_id
-      ) SELECT category,id,name,unit,masuk::text,keluar::text,(masuk-keluar)::text AS net FROM movement ORDER BY category,name`,args);
-      const minumanCount=await db.query(`SELECT COUNT(*)::int AS count FROM (
-        SELECT t.transaction_date,d.product_id,COALESCE(NULLIF(t.customer_name,''),'Umum') AS customer
-        FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id)
-        WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
-        GROUP BY t.transaction_date,d.product_id,COALESCE(NULLIF(t.customer_name,''),'Umum')
-      ) grouped_rows`,args);
-      const minumanDetails=await db.query(`SELECT to_char(t.transaction_date,'YYYY-MM-DD') AS date,p.product_name AS product,
-        COALESCE(NULLIF(t.customer_name,''),'Umum') AS "customerName",SUM(d.jumlah)::text AS quantity,
-        SUM(d.subtotal)::text AS total,COUNT(DISTINCT t.transaksi_id)::int AS transactions
-        FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id) JOIN product p USING(product_id)
-        WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
-        GROUP BY t.transaction_date,p.product_id,p.product_name,COALESCE(NULLIF(t.customer_name,''),'Umum')
-        ORDER BY t.transaction_date DESC,p.product_name,"customerName" LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
-      const plastikCount=await db.query(`SELECT COUNT(*)::int AS count FROM (
-        SELECT t.transaction_date,d.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik') AS party
-        FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) LEFT JOIN supplier s USING(supplier_id)
-        WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
-        GROUP BY t.transaction_date,d.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
-      ) grouped_rows`,args);
-      const plastikDetails=await db.query(`SELECT to_char(t.transaction_date,'YYYY-MM-DD') AS date,p.plastik_name AS product,
-        CASE WHEN t.type='Beli Plastik' THEN 'Masuk' ELSE 'Kirim ke pabrik' END AS movement,
-        COALESCE(s.supplier_name,'Pabrik') AS party,t.status::text AS status,
-        SUM(CASE WHEN t.type='Beli Plastik' THEN d.berat_diterima ELSE d.berat_kirim END)::text AS weight,
-        SUM(CASE WHEN t.type='Kirim Pabrik' THEN d.berat_diterima ELSE 0 END)::text AS received,
-        COUNT(DISTINCT t.transaksi_id)::int AS transactions
-        FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
-        LEFT JOIN supplier s USING(supplier_id)
-        WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
-        GROUP BY t.transaction_date,p.plastik_id,p.plastik_name,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
-        ORDER BY t.transaction_date DESC,p.plastik_name,movement,party LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
-      const factory=await db.query(`SELECT
-        (SELECT COUNT(*)::int FROM transaksi WHERE type='Kirim Pabrik' AND status='Menunggu Pabrik' AND transaction_date BETWEEN $1::date AND $2::date) AS pending,
-        COUNT(*)::int AS notes,COALESCE(SUM(total_nominal),0)::text AS nominal
-        FROM transaksi WHERE type='Kirim Pabrik' AND status='Selesai' AND selesai_date BETWEEN $1::date AND $2::date`,args);
-      // Pengiriman dan penerimaan nota adalah dua kejadian berbeda, bukan dua arus stok.
-      const events=`WITH events AS (
-        SELECT transaksi_id,transaction_date AS date,type::text AS event,status::text,method_id,customer_name,supplier_id,
-          CASE WHEN type='Jual Minuman' THEN total_nominal ELSE 0 END AS masuk,
-          CASE WHEN type IN ('Beli Plastik','Restok Minuman') THEN total_nominal ELSE 0 END AS keluar,0::numeric AS nota
-        FROM transaksi WHERE status<>'Batal'
-        UNION ALL
-        SELECT transaksi_id,selesai_date,'Nota Pabrik',status::text,method_id,NULL::varchar AS customer_name,supplier_id,total_nominal,0,total_nominal
-        FROM transaksi WHERE type='Kirim Pabrik' AND status='Selesai'
-      ) `;
-      const count=await db.query(events+`SELECT COUNT(*)::int AS count FROM events WHERE date BETWEEN $1::date AND $2::date`,args);
-      const rows=await db.query(events+`SELECT e.transaksi_id,to_char(e.date,'YYYY-MM-DD') AS date,e.event,e.status,e.customer_name AS "customerName",
-        s.supplier_name AS "supplierName",COALESCE(m.payment_method,'—') AS method,e.masuk::text,e.keluar::text,e.nota::text
-        FROM events e LEFT JOIN metode_bayar m USING(method_id) LEFT JOIN supplier s USING(supplier_id)
-        WHERE date BETWEEN $1::date AND $2::date ORDER BY date DESC,transaksi_id DESC,event LIMIT 50 OFFSET $3`,[...args,(f.page-1)*50]);
-      return {from:f.from,to:f.to,cash:cash.rows,goods:goods.rows,minumanDetails:minumanDetails.rows,
-        minumanCount:minumanCount.rows[0].count,plastikDetails:plastikDetails.rows,plastikCount:plastikCount.rows[0].count,
-        factory:factory.rows[0],events:rows.rows,count:count.rows[0].count,page:f.page,pageSize:50};
+      const offset=(f.page-1)*pageSize;
+
+      const [salesByProduct,salesProductCount,salesByBuyer,salesBuyerCount,goodsIn,goodsInCount,transactions,transactionCount]=await Promise.all([
+        db.query(`SELECT p.product_id,p.product_name AS product,b.brand_name AS brand,SUM(d.jumlah)::text AS quantity,
+          SUM(d.subtotal)::text AS total,COUNT(DISTINCT t.transaksi_id)::int AS notes
+          FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id) JOIN product p USING(product_id)
+          JOIN brand b USING(brand_id)
+          WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+          GROUP BY p.product_id,p.product_name,b.brand_name ORDER BY p.product_name LIMIT $3 OFFSET $4`,[...args,pageSize,offset]),
+        db.query(`SELECT COUNT(*)::int AS count FROM product p WHERE EXISTS(
+          SELECT 1 FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id)
+          WHERE d.product_id=p.product_id AND t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date)`,args),
+        db.query(`SELECT COALESCE(NULLIF(BTRIM(t.customer_name),''),'Umum') AS "customerName",
+          SUM(d.jumlah)::text AS quantity,SUM(d.subtotal)::text AS total,COUNT(DISTINCT t.transaksi_id)::int AS notes
+          FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id)
+          WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+          GROUP BY COALESCE(NULLIF(BTRIM(t.customer_name),''),'Umum') ORDER BY SUM(d.subtotal) DESC,"customerName"
+          LIMIT $3 OFFSET $4`,[...args,pageSize,offset]),
+        db.query(`SELECT COUNT(*)::int AS count FROM (
+          SELECT COALESCE(NULLIF(BTRIM(t.customer_name),''),'Umum')
+          FROM transaksi t WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
+          GROUP BY COALESCE(NULLIF(BTRIM(t.customer_name),''),'Umum')) buyers`,args),
+        db.query(goodsInCte+`SELECT transaksi_id,date,category,product,unit,party,quantity::text,unit_price::text AS "unitPrice",subtotal::text
+          FROM goods_in ORDER BY date DESC,product,transaksi_id DESC LIMIT $3 OFFSET $4`,[...args,pageSize,offset]),
+        db.query(goodsInCte+`SELECT COUNT(*)::int AS count FROM goods_in`,args),
+        db.query(`SELECT t.transaksi_id,to_char(t.transaction_date,'YYYY-MM-DD') AS date,
+          to_char(t.selesai_date,'YYYY-MM-DD') AS "noteDate",t.type::text AS event,t.status::text,
+          t.customer_name AS "customerName",s.supplier_name AS "supplierName",COALESCE(m.payment_method,'—') AS method,
+          CASE WHEN t.status='Selesai' AND (t.type='Jual Minuman' OR t.type='Kirim Pabrik') THEN t.total_nominal ELSE 0 END::text AS masuk,
+          CASE WHEN t.status='Selesai' AND t.type IN ('Beli Plastik','Restok Minuman') THEN t.total_nominal ELSE 0 END::text AS keluar,
+          t.total_nominal::text AS total
+          FROM transaksi t LEFT JOIN supplier s USING(supplier_id) LEFT JOIN metode_bayar m USING(method_id)
+          WHERE t.transaction_date BETWEEN $1::date AND $2::date
+            OR (t.type='Kirim Pabrik' AND t.selesai_date BETWEEN $1::date AND $2::date)
+          ORDER BY GREATEST(t.transaction_date,COALESCE(t.selesai_date,t.transaction_date)) DESC,t.transaksi_id DESC
+          LIMIT $3 OFFSET $4`,[...args,pageSize,offset]),
+        db.query(`SELECT COUNT(*)::int AS count FROM transaksi t
+          WHERE t.transaction_date BETWEEN $1::date AND $2::date
+            OR (t.type='Kirim Pabrik' AND t.selesai_date BETWEEN $1::date AND $2::date)`,args),
+      ]);
+      return {from:f.from,to:f.to,page:f.page,pageSize,
+        counts:{salesProduct:salesProductCount.rows[0].count,salesBuyer:salesBuyerCount.rows[0].count,
+          goodsIn:goodsInCount.rows[0].count,transactions:transactionCount.rows[0].count},
+        salesByProduct:salesByProduct.rows,salesByBuyer:salesByBuyer.rows,goodsIn:goodsIn.rows,transactions:transactions.rows};
     });
   });
 }
