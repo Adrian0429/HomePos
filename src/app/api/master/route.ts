@@ -42,6 +42,18 @@ async function save(data:z.infer<typeof item>, existing?:{id:number;version:stri
           : await db.query(`INSERT INTO plastik(plastik_name,stok) VALUES($1,$2) RETURNING *, xmin::text AS version`,[data.name,data.stock]);
       // Optimistic lock juga menangkap perubahan stok oleh POS atau gudang.
       if(!result.rowCount) throw new BusinessError('Data telah berubah atau tidak ditemukan. Muat ulang daftar lalu buka Edit kembali.');
+      if(data.kind==='product'){
+        const productId=result.rows[0].product_id;
+        const lots=await db.query('SELECT COALESCE(SUM(remaining_quantity),0)::int AS quantity FROM product_stock_lot WHERE product_id=$1',[productId]);
+        let difference=data.stock-Number(lots.rows[0].quantity);
+        if(difference>0) await db.query(`INSERT INTO product_stock_lot(product_id,restock_transaction_id,initial_quantity,remaining_quantity)
+          VALUES($1,NULL,$2,$2)`,[productId,difference]);
+        else if(difference<0){
+          difference=-difference;
+          const stockLots=await db.query('SELECT lot_id,remaining_quantity FROM product_stock_lot WHERE product_id=$1 AND remaining_quantity>0 ORDER BY lot_id FOR UPDATE',[productId]);
+          for(const lot of stockLots.rows){if(!difference)break;const used=Math.min(difference,Number(lot.remaining_quantity));await db.query('UPDATE product_stock_lot SET remaining_quantity=remaining_quantity-$1 WHERE lot_id=$2',[used,lot.lot_id]);difference-=used;}
+        }
+      }
       return result.rows[0];
     });
   } catch(error) {

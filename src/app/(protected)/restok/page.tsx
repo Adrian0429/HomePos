@@ -13,7 +13,7 @@ export default function Restock(){
   function update(index:number,field:keyof Line,value:string){setLines(previous=>previous.map((line,i)=>i!==index?line:{...line,[field]:value,...(field==='productId'?{hargaSatuan:o.catalog.products.find(p=>String(p.product_id)===value)?.price_product??''}:{})}));}
   return <main className="mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
     <p className="mb-2 text-sm text-emerald-700">Warung / Pembelian</p><h1 className="text-3xl font-bold">Restok minuman</h1>
-    <p className="mb-5 mt-2 text-slate-600">Catat pembelian minuman. Stok bertambah dan total pembelian dicatat sebagai uang keluar.</p>
+    <p className="mb-5 mt-2 text-slate-600">Catat pembelian minuman. Stok bertambah dan nilai pembelian otomatis masuk ke hutang restok dengan jatuh tempo 14 hari.</p>
     {o.message&&<p role="status" className="mb-5 rounded-xl border border-emerald-200 bg-white p-4">{o.message}</p>}{!o.loaded&&<p role="status" className="mb-5">Memuat katalog…</p>}
     {o.loaded&&!o.catalog.products.length&&<p className="mb-4">Belum ada produk. <Link className="underline text-emerald-800" href="/master">Tambahkan produk di Master Barang</Link> terlebih dahulu.</p>}
     <form onSubmit={e=>{e.preventDefault();void o.save({type:'Restok Minuman',transactionDate:o.date,items:lines.map(line=>({productId:Number(line.productId),jumlah:Number(line.jumlah),hargaSatuan:line.hargaSatuan}))},()=>setLines([empty()]),false);}}>
@@ -30,7 +30,7 @@ export default function Restock(){
           <tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={4} className="text-right">Total uang keluar</td><td className="text-right whitespace-nowrap tabular-nums"><output>{rupiah(total)}</output></td><td/></tr></tfoot>
         </table></div>
         <div className="flex flex-wrap justify-between gap-3"><button type="button" disabled={lines.length>=Math.min(o.catalog.products.length,100)} onClick={()=>setLines([...lines,empty()])}>+ Tambah baris</button><button type="submit" disabled={!o.catalog.products.length}>{o.busy?'Menyimpan…':'Simpan restok'}</button></div>
-        <p className="text-sm text-slate-500">Restok tidak mencatat metode pembayaran. Harga modal mengikuti harga beli terakhir; harga jual diisi berbeda saat transaksi kasir.</p>
+        <p className="text-sm text-slate-500">Setiap restok dicatat sebagai hutang restok dan dapat ditandai lunas di halaman Hutang &amp; Piutang.</p>
       </fieldset>
     </form>
   </main>;

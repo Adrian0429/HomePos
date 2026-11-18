@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import MoneyInput from '@/components/money-input';
 import CreatableSelect from '@/components/creatable-select';
-import { OperationFields, OperationStatus, rupiah, scaled, useOperation } from '@/components/operation';
+import { OperationStatus, rupiah, scaled, today, useOperation } from '@/components/operation';
 import PrinterControl from '@/components/printer-control';
 import { sendReceipt, usePrintAgent, type ReceiptData } from '@/lib/print';
 export default function POS() {
@@ -11,6 +11,7 @@ export default function POS() {
   const [search,setSearch]=useState('');
   const [cart,setCart]=useState<{productId:number;quantity:string;hargaSatuan:string}[]>([]);
   const [customerName,setCustomerName]=useState('');
+  const [isDebt,setIsDebt]=useState(false);
   const [pendingReceipt,setPendingReceipt]=useState<ReceiptData|null>(null);
   const [printError,setPrintError]=useState('');
   const products=o.catalog.products.filter(p=>`${p.product_name} ${p.brand_name}`.toLowerCase().includes(search.toLowerCase()));
@@ -40,8 +41,8 @@ export default function POS() {
       return {name:product.product_name,quantity:Number(item.quantity),price:rupiah(scaled(item.hargaSatuan,2)),subtotal:rupiah(subtotal)};
     });
     const receiptBase={date:o.date,customer:customerName.trim()||'Umum',items};
-    const body={type:'Jual Minuman',transactionDate:o.date,methodId:Number(o.method),customerName:customerName.trim()||undefined,items:cart.map(i=>({productId:i.productId,jumlah:Number(i.quantity),hargaSatuan:i.hargaSatuan}))};
-    void o.save(body,()=>{setCart([]);setCustomerName('');},true,async saved=>{
+    const body={type:'Jual Minuman',transactionDate:o.date,...(!isDebt?{methodId:Number(o.method)}:{}),isDebt,customerName:customerName.trim()||undefined,items:cart.map(i=>({productId:i.productId,jumlah:Number(i.quantity),hargaSatuan:i.hargaSatuan}))};
+    void o.save(body,()=>{setCart([]);setCustomerName('');setIsDebt(false);},!isDebt,async saved=>{
       const receipt={...receiptBase,number:String(saved.transaksi_id),total:rupiah(scaled(saved.total_nominal,2))};
       setPendingReceipt(receipt);setPrintError('');
       try {await sendReceipt(receipt,printer.selected);setPendingReceipt(null);setPrintError('Struk berhasil dikirim ke printer.');}
@@ -77,7 +78,12 @@ export default function POS() {
         })}</div>
       </section>
       <form className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 lg:sticky lg:top-4" onSubmit={e=>{e.preventDefault();if(cart.length&&!invalid)submitSale();}}>
-        <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold">Keranjang</h2><span className="text-xs text-slate-500">{cart.length} jenis produk</span></div><fieldset disabled={o.busy||!o.loaded} className="space-y-3"><OperationFields operation={o}/><label>Nama pembeli (opsional)
+        <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold">Keranjang</h2><span className="text-xs text-slate-500">{cart.length} jenis produk</span></div><fieldset disabled={o.busy||!o.loaded} className="space-y-3">
+          <label>Tanggal transaksi<input required type="date" max={today()} value={o.date} onChange={e=>o.setDate(e.target.value)}/></label>
+          <label className="flex items-center gap-2"><input className="!m-0 !w-auto" type="checkbox" checked={isDebt} onChange={e=>setIsDebt(e.target.checked)}/>Catat sebagai hutang pembeli</label>
+          {isDebt&&<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Penjualan dicatat sebagai piutang dengan jatuh tempo 14 hari. Stok tetap berkurang seperti penjualan biasa.</p>}
+          {!isDebt&&<label>Metode pembayaran<select required value={o.method} onChange={e=>o.setMethod(e.target.value)}><option value="">Pilih metode bayar</option>{o.catalog.methods.map(m=><option key={m.method_id} value={m.method_id}>{m.payment_method}</option>)}</select></label>}
+          <label>Nama pembeli {isDebt?'(wajib untuk hutang)':'(opsional)'}
             <CreatableSelect ariaLabel="nama pembeli" value={customerName} onChange={setCustomerName}
               options={o.catalog.customers} placeholder="Pilih nama atau ketik nama baru"/>
           </label>
@@ -97,7 +103,7 @@ export default function POS() {
           {invalid&&<p role="alert" className="text-red-700">Jumlah harus valid, stok cukup, dan harga jual wajib diisi untuk setiap produk.</p>}
           <div className="flex justify-between text-lg font-bold"><span>Total</span><output>{rupiah(total)}</output></div>
           <p className="text-xs text-slate-500">Isi harga jual untuk setiap produk; nama pembeli boleh dikosongkan.</p>
-          <button type="submit" className="w-full" disabled={!cart.length||invalid||!o.catalog.methods.length}>{o.busy?'Menyimpan…':'Simpan penjualan'}</button>
+          <button type="submit" className="w-full" disabled={!cart.length||invalid||(!isDebt&&!o.catalog.methods.length)||(isDebt&&!customerName.trim())}>{o.busy?'Menyimpan…':isDebt?'Simpan sebagai hutang':'Simpan penjualan'}</button>
         </fieldset>
       </form>
     </div>
