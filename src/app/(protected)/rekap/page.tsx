@@ -6,6 +6,7 @@ type Category='minuman'|'plastik';
 type View='item'|'party'|'goodsIn'|'transactions';
 type Period='today'|'week'|'month'|'custom';
 type Supplier={supplier_id:number;supplier_name:string};
+type Buyer={customer_name:string};
 type SalesProduct={product_id:number;product:string;brand:string;quantity:string;total:string;notes:number};
 type SalesBuyer={customerName:string;quantity:string;total:string;notes:number};
 type PlasticProduct={plastik_id:number;product:string;masuk:string;dikirim:string;diterima:string;notes:number};
@@ -13,7 +14,7 @@ type PlasticParty={date:string;product:string;movement:string;party:string;statu
 type GoodsIn={transaksi_id:number;date:string;category:string;product:string;unit:string;party:string;quantity:string;unitPrice:string;subtotal:string};
 type Transaction={transaksi_id:number;date:string;noteDate:string|null;event:string;status:string;customerName:string|null;supplierName:string|null;method:string;masuk:string;keluar:string;total:string};
 type Totals={sales:{quantity:string;total:string;notes:number};plastic:{masuk:string;dikirim:string;diterima:string;notes:number};goodsIn:{quantity:string;total:string;notes:number};transactions:{masuk:string;keluar:string;total:string;notes:number}};
-type Report={from:string;to:string;category:Category;supplierId:number|null;suppliers:Supplier[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};totals:Totals;salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
+type Report={from:string;to:string;category:Category;supplierId:number|null;buyerName:string|null;suppliers:Supplier[];buyers:Buyer[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};totals:Totals;salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
 
 const money=(amount:string)=>rupiah(scaled(amount,2));
 const numberFormat=new Intl.NumberFormat('id-ID',{maximumFractionDigits:2});
@@ -29,17 +30,19 @@ export default function Recap(){
   const [period,setPeriod]=useState<Period>('today');
   const [category,setCategory]=useState<Category>('minuman');
   const [supplierId,setSupplierId]=useState('');
+  const [buyerName,setBuyerName]=useState('');
   const [view,setView]=useState<View>('item');
   const [report,setReport]=useState<Report|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const sequence=useRef(0);
 
-  async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId){
+  async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId,selectedBuyerName=buyerName){
     const seq=++sequence.current;setBusy(true);setError('');
     try{
       const params=new URLSearchParams({from:start,to:end,page:String(page),category:selectedCategory});
       if(selectedSupplierId)params.set('supplierId',selectedSupplierId);
+      if(selectedBuyerName)params.set('buyerName',selectedBuyerName);
       const response=await fetch(`/api/rekap?${params}`);
       const data=await response.json();
       if(!response.ok)throw new Error(data.details?.[0]?.message??data.error??'Rekap gagal dimuat');
@@ -56,16 +59,18 @@ export default function Recap(){
   function choosePeriod(next:Exclude<Period,'custom'>){
     const end=today();
     const start=next==='today'?end:daysBefore(end,next==='week'?6:29);
-    setPeriod(next);setFrom(start);setTo(end);void load(start,end,1,category,supplierId);
+    setPeriod(next);setFrom(start);setTo(end);void load(start,end,1,category,supplierId,buyerName);
   }
   function chooseCategory(next:Category){
     const nextSupplierId=next==='minuman'?'':supplierId;
-    setCategory(next);setSupplierId(nextSupplierId);setView('item');
+    const nextBuyerName=next==='plastik'?'':buyerName;
+    setCategory(next);setSupplierId(nextSupplierId);setBuyerName(nextBuyerName);setView('item');
     const start=from||report?.from||today();const end=to||report?.to||today();
-    setFrom(start);setTo(end);void load(start,end,1,next,nextSupplierId);
+    setFrom(start);setTo(end);void load(start,end,1,next,nextSupplierId,nextBuyerName);
   }
   function chooseSupplier(next:string){setSupplierId(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,next);}
-  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId);}
+  function chooseBuyer(next:string){setBuyerName(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,supplierId,next);}
+  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId,buyerName);}
   const viewOptions:{id:View;label:string}[]=[
     {id:'item',label:category==='minuman'?'Penjualan per barang':'Pergerakan per barang'},
     {id:'party',label:category==='minuman'?'Penjualan per pembeli':'Pemasok / tujuan pabrik'},
@@ -130,6 +135,15 @@ export default function Recap(){
         </select>
       </label>
       {supplierId&&<p className="mt-2 text-xs text-slate-500">Filter supplier menampilkan pembelian dari supplier tersebut. Pengiriman ke pabrik tidak mencatat asal supplier.</p>}
+    </section>}
+    {category==='minuman'&&<section aria-label="Filter pembeli minuman" className="mb-4 max-w-md rounded-xl border border-slate-200 bg-white p-4">
+      <label>Filter pembeli
+        <select value={buyerName} onChange={event=>chooseBuyer(event.target.value)}>
+          <option value="">Semua pembeli</option>
+          {(report?.buyers??[]).map(buyer=><option key={buyer.customer_name} value={buyer.customer_name}>{buyer.customer_name}</option>)}
+        </select>
+      </label>
+      {buyerName&&view==='goodsIn'&&<p className="mt-2 text-xs text-slate-500">Filter pembeli berlaku untuk penjualan dan riwayat nota; barang masuk tidak terkait dengan pembeli.</p>}
     </section>}
     <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Jenis tampilan rekap">
       {viewOptions.map(item=><button key={item.id} type="button" aria-pressed={view===item.id}
