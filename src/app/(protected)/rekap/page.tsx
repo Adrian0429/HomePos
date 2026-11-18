@@ -12,7 +12,8 @@ type PlasticProduct={plastik_id:number;product:string;masuk:string;dikirim:strin
 type PlasticParty={date:string;product:string;movement:string;party:string;status:string;quantity:string;diterima:string;notes:number};
 type GoodsIn={transaksi_id:number;date:string;category:string;product:string;unit:string;party:string;quantity:string;unitPrice:string;subtotal:string};
 type Transaction={transaksi_id:number;date:string;noteDate:string|null;event:string;status:string;customerName:string|null;supplierName:string|null;method:string;masuk:string;keluar:string;total:string};
-type Report={from:string;to:string;category:Category;supplierId:number|null;suppliers:Supplier[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
+type Totals={sales:{quantity:string;total:string;notes:number};plastic:{masuk:string;dikirim:string;diterima:string;notes:number};goodsIn:{quantity:string;total:string;notes:number};transactions:{masuk:string;keluar:string;total:string;notes:number}};
+type Report={from:string;to:string;category:Category;supplierId:number|null;suppliers:Supplier[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};totals:Totals;salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
 
 const money=(amount:string)=>rupiah(scaled(amount,2));
 const numberFormat=new Intl.NumberFormat('id-ID',{maximumFractionDigits:2});
@@ -76,6 +77,24 @@ export default function Recap(){
     :view==='item'?'plasticProduct':view==='party'?'plasticParty':view==='goodsIn'?'goodsIn':'transactions';
   const rowCount=report?.counts[countKey]??0;
   const pageCount=report?Math.max(1,Math.ceil(rowCount/report.pageSize)):1;
+  const metrics:{label:string;value:string}[]=[];
+  if(report){
+    const total=report.totals;
+    if((view==='item'||view==='party')&&category==='minuman')metrics.push(
+      {label:'Jumlah terjual',value:`${numberFormat.format(Number(total.sales.quantity))} unit`},
+      {label:'Total penjualan',value:money(total.sales.total)},
+      {label:'Jumlah nota',value:String(total.sales.notes)},
+    );
+    else if((view==='item'||view==='party')&&category==='plastik'){
+      metrics.push({label:'Berat masuk',value:`${numberFormat.format(Number(total.plastic.masuk))} kg`},
+        ...(supplierId?[]:[{label:'Berat dikirim',value:`${numberFormat.format(Number(total.plastic.dikirim))} kg`},{label:'Diterima pabrik',value:`${numberFormat.format(Number(total.plastic.diterima))} kg`}]),
+        {label:'Jumlah nota',value:String(total.plastic.notes)});
+    }
+    else if(view==='goodsIn')metrics.push({label:'Jumlah barang masuk',value:`${numberFormat.format(Number(total.goodsIn.quantity))} ${category==='plastik'?'kg':'unit'}`},
+      {label:'Total pembelian',value:money(total.goodsIn.total)},{label:'Jumlah nota',value:String(total.goodsIn.notes)});
+    else metrics.push({label:'Uang masuk',value:money(total.transactions.masuk)},{label:'Uang keluar',value:money(total.transactions.keluar)},
+      {label:'Total nota',value:money(total.transactions.total)},{label:'Jumlah nota',value:String(total.transactions.notes)});
+  }
 
   return <main className="mx-auto max-w-[1600px] p-4 md:px-6 md:py-5">
     <p className="mb-2 text-sm text-emerald-700">Laporan / Operasional</p>
@@ -124,46 +143,52 @@ export default function Recap(){
         </div>
       </div>
 
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map(metric=><div key={metric.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs text-slate-500">{metric.label}</p><p className="mt-1 font-semibold tabular-nums">{metric.value}</p>
+        </div>)}
+      </div>
+
       {view==='item'&&category==='minuman'&&<div tabIndex={0} role="region" aria-label="Penjualan minuman per barang, dapat digulir" className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[700px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Barang</th><th>Merek</th><th>Jumlah terjual</th><th>Nilai penjualan</th><th>Jumlah nota</th></tr></thead><tbody>
           {report.salesByProduct.map(row=><tr key={row.product_id}><td>{row.product}</td><td>{row.brand}</td><td>{numberFormat.format(Number(row.quantity))} unit</td><td>{money(row.total)}</td><td>{row.notes}</td></tr>)}
           {!report.salesByProduct.length&&<tr><td colSpan={5}>Tidak ada penjualan barang dalam periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={2}>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.sales.quantity))} unit</td><td>{money(report.totals.sales.total)}</td><td>{report.totals.sales.notes}</td></tr></tfoot></table>
       </div>}
 
       {view==='item'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per barang, dapat digulir" className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[800px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Berat masuk</th>{!supplierId&&<><th>Berat dikirim</th><th>Diterima pabrik</th></>}<th>Jumlah nota</th></tr></thead><tbody>
           {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td></>}<td>{row.notes}</td></tr>)}
           {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?3:5}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td></>}<td>{report.totals.plastic.notes}</td></tr></tfoot></table>
       </div>}
 
       {view==='party'&&category==='minuman'&&<div tabIndex={0} role="region" aria-label="Penjualan per pembeli, dapat digulir" className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[640px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Pembeli</th><th>Jumlah barang</th><th>Total pembelian</th><th>Jumlah nota</th></tr></thead><tbody>
           {report.salesByBuyer.map(row=><tr key={row.customerName}><td>{row.customerName}</td><td>{numberFormat.format(Number(row.quantity))} unit</td><td>{money(row.total)}</td><td>{row.notes}</td></tr>)}
           {!report.salesByBuyer.length&&<tr><td colSpan={4}>Tidak ada penjualan per pembeli dalam periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.sales.quantity))} unit</td><td>{money(report.totals.sales.total)}</td><td>{report.totals.sales.notes}</td></tr></tfoot></table>
       </div>}
 
       {view==='party'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per pemasok dan tujuan, dapat digulir" className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[1000px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal</th><th>Jenis plastik</th><th>Pergerakan</th><th>Pemasok / tujuan</th><th>Berat bergerak</th><th>Diterima pabrik</th><th>Status</th><th>Jumlah nota</th></tr></thead><tbody>
           {report.plasticParties.map((row,index)=><tr key={`${row.date}-${row.product}-${row.movement}-${row.party}-${index}`}><td>{dateLabel(row.date)}</td><td>{row.product}</td><td>{row.movement}</td><td>{row.party}</td><td>{numberFormat.format(Number(row.quantity))} kg</td><td>{row.movement==='Kirim ke pabrik'?`${numberFormat.format(Number(row.diterima))} kg`:'—'}</td><td>{row.status}</td><td>{row.notes}</td></tr>)}
           {!report.plasticParties.length&&<tr><td colSpan={8}>Tidak ada pergerakan plastik per pemasok atau tujuan dalam periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={4}>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.plastic.masuk)+Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td><td>—</td><td>{report.totals.plastic.notes}</td></tr></tfoot></table>
       </div>}
 
       {view==='goodsIn'&&<div tabIndex={0} role="region" aria-label={`Barang masuk ${category}, termasuk harga beli, dapat digulir`} className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[980px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal</th><th>Kategori</th><th>Barang</th><th>Pemasok</th><th>Jumlah masuk</th><th>Harga beli / unit</th><th>Subtotal</th><th>No. nota</th></tr></thead><tbody>
           {report.goodsIn.map((row,index)=><tr key={`${row.transaksi_id}-${row.product}-${index}`}><td>{dateLabel(row.date)}</td><td>{row.category}</td><td>{row.product}</td><td>{row.party}</td><td>{numberFormat.format(Number(row.quantity))} {row.unit}</td><td>{money(row.unitPrice)}{row.unit==='kg'?' / kg':' / unit'}</td><td>{money(row.subtotal)}</td><td>#{row.transaksi_id}</td></tr>)}
           {!report.goodsIn.length&&<tr><td colSpan={8}>Tidak ada barang masuk pada periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={4}>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.goodsIn.quantity))} {category==='plastik'?'kg':'unit'}</td><td>—</td><td>{money(report.totals.goodsIn.total)}</td><td>{report.totals.goodsIn.notes}</td></tr></tfoot></table>
       </div>}
 
       {view==='transactions'&&<div tabIndex={0} role="region" aria-label={`Riwayat nota ${category}, dapat digulir`} className="table-scroll bg-white">
         <table className="purchase-sheet w-full min-w-[1120px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal transaksi</th><th>Tanggal nota pabrik</th><th>No. nota</th><th>Kegiatan</th><th>Pembeli / pemasok</th><th>Status</th><th>Metode</th><th>Uang masuk</th><th>Uang keluar</th><th>Total nota</th></tr></thead><tbody>
           {report.transactions.map(row=><tr key={row.transaksi_id}><td>{dateLabel(row.date)}</td><td>{row.noteDate?dateLabel(row.noteDate):'—'}</td><td>#{row.transaksi_id}</td><td>{row.event}</td><td>{row.customerName||row.supplierName||(category==='plastik'&&row.event==='Kirim Pabrik'?'Pabrik':'—')}</td><td>{row.status}</td><td>{row.method}</td><td>{money(row.masuk)}</td><td>{money(row.keluar)}</td><td>{money(row.total)}</td></tr>)}
           {!report.transactions.length&&<tr><td colSpan={10}>Tidak ada nota dalam periode ini.</td></tr>}
-        </tbody></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={7}>TOTAL SELURUH FILTER · {report.totals.transactions.notes} nota</td><td>{money(report.totals.transactions.masuk)}</td><td>{money(report.totals.transactions.keluar)}</td><td>{money(report.totals.transactions.total)}</td></tr></tfoot></table>
       </div>}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
