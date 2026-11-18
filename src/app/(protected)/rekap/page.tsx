@@ -5,13 +5,14 @@ import { rupiah, scaled, today } from '@/components/operation';
 type Category='minuman'|'plastik';
 type View='item'|'party'|'goodsIn'|'transactions';
 type Period='today'|'week'|'month'|'custom';
+type Supplier={supplier_id:number;supplier_name:string};
 type SalesProduct={product_id:number;product:string;brand:string;quantity:string;total:string;notes:number};
 type SalesBuyer={customerName:string;quantity:string;total:string;notes:number};
 type PlasticProduct={plastik_id:number;product:string;masuk:string;dikirim:string;diterima:string;notes:number};
 type PlasticParty={date:string;product:string;movement:string;party:string;status:string;quantity:string;diterima:string;notes:number};
 type GoodsIn={transaksi_id:number;date:string;category:string;product:string;unit:string;party:string;quantity:string;unitPrice:string;subtotal:string};
 type Transaction={transaksi_id:number;date:string;noteDate:string|null;event:string;status:string;customerName:string|null;supplierName:string|null;method:string;masuk:string;keluar:string;total:string};
-type Report={from:string;to:string;category:Category;page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
+type Report={from:string;to:string;category:Category;supplierId:number|null;suppliers:Supplier[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;plasticParty:number;goodsIn:number;transactions:number};salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];plasticParties:PlasticParty[];goodsIn:GoodsIn[];transactions:Transaction[]};
 
 const money=(amount:string)=>rupiah(scaled(amount,2));
 const numberFormat=new Intl.NumberFormat('id-ID',{maximumFractionDigits:2});
@@ -26,16 +27,19 @@ export default function Recap(){
   const [to,setTo]=useState('');
   const [period,setPeriod]=useState<Period>('today');
   const [category,setCategory]=useState<Category>('minuman');
+  const [supplierId,setSupplierId]=useState('');
   const [view,setView]=useState<View>('item');
   const [report,setReport]=useState<Report|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const sequence=useRef(0);
 
-  async function load(start:string,end:string,page=1,selectedCategory:Category=category){
+  async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId){
     const seq=++sequence.current;setBusy(true);setError('');
     try{
-      const response=await fetch(`/api/rekap?${new URLSearchParams({from:start,to:end,page:String(page),category:selectedCategory})}`);
+      const params=new URLSearchParams({from:start,to:end,page:String(page),category:selectedCategory});
+      if(selectedSupplierId)params.set('supplierId',selectedSupplierId);
+      const response=await fetch(`/api/rekap?${params}`);
       const data=await response.json();
       if(!response.ok)throw new Error(data.details?.[0]?.message??data.error??'Rekap gagal dimuat');
       if(seq===sequence.current)setReport(data);
@@ -51,14 +55,16 @@ export default function Recap(){
   function choosePeriod(next:Exclude<Period,'custom'>){
     const end=today();
     const start=next==='today'?end:daysBefore(end,next==='week'?6:29);
-    setPeriod(next);setFrom(start);setTo(end);void load(start,end,1,category);
+    setPeriod(next);setFrom(start);setTo(end);void load(start,end,1,category,supplierId);
   }
   function chooseCategory(next:Category){
-    setCategory(next);setView('item');
+    const nextSupplierId=next==='minuman'?'':supplierId;
+    setCategory(next);setSupplierId(nextSupplierId);setView('item');
     const start=from||report?.from||today();const end=to||report?.to||today();
-    setFrom(start);setTo(end);void load(start,end,1,next);
+    setFrom(start);setTo(end);void load(start,end,1,next,nextSupplierId);
   }
-  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category);}
+  function chooseSupplier(next:string){setSupplierId(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,next);}
+  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId);}
   const viewOptions:{id:View;label:string}[]=[
     {id:'item',label:category==='minuman'?'Penjualan per barang':'Pergerakan per barang'},
     {id:'party',label:category==='minuman'?'Penjualan per pembeli':'Pemasok / tujuan pabrik'},
@@ -97,6 +103,15 @@ export default function Recap(){
       <button type="button" aria-pressed={category==='minuman'} className={category==='minuman'?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseCategory('minuman')}>Minuman</button>
       <button type="button" aria-pressed={category==='plastik'} className={category==='plastik'?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseCategory('plastik')}>Plastik</button>
     </div>
+    {category==='plastik'&&<section aria-label="Filter pemasok plastik" className="mb-4 max-w-md rounded-xl border border-slate-200 bg-white p-4">
+      <label>Filter pemasok / supplier
+        <select value={supplierId} onChange={event=>chooseSupplier(event.target.value)}>
+          <option value="">Semua pemasok</option>
+          {(report?.suppliers??[]).map(supplier=><option key={supplier.supplier_id} value={supplier.supplier_id}>{supplier.supplier_name}</option>)}
+        </select>
+      </label>
+      {supplierId&&<p className="mt-2 text-xs text-slate-500">Filter supplier menampilkan pembelian dari supplier tersebut. Pengiriman ke pabrik tidak mencatat asal supplier.</p>}
+    </section>}
     <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Jenis tampilan rekap">
       {viewOptions.map(item=><button key={item.id} type="button" aria-pressed={view===item.id}
         className={view===item.id?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseView(item.id)}>{item.label}</button>)}
@@ -117,9 +132,9 @@ export default function Recap(){
       </div>}
 
       {view==='item'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per barang, dapat digulir" className="table-scroll bg-white">
-        <table className="purchase-sheet w-full min-w-[800px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Berat masuk</th><th>Berat dikirim</th><th>Diterima pabrik</th><th>Jumlah nota</th></tr></thead><tbody>
-          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.masuk))} kg</td><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td><td>{row.notes}</td></tr>)}
-          {!report.plasticByProduct.length&&<tr><td colSpan={5}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
+        <table className="purchase-sheet w-full min-w-[800px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Berat masuk</th>{!supplierId&&<><th>Berat dikirim</th><th>Diterima pabrik</th></>}<th>Jumlah nota</th></tr></thead><tbody>
+          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td></>}<td>{row.notes}</td></tr>)}
+          {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?3:5}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
         </tbody></table>
       </div>}
 
@@ -153,8 +168,8 @@ export default function Recap(){
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm text-slate-600">Halaman {report.page} dari {pageCount}</span>
-        <div className="flex gap-2"><button type="button" className="!bg-white !text-slate-700 border border-slate-200" disabled={busy||report.page<=1} onClick={()=>void load(report.from,report.to,report.page-1,category)}>Sebelumnya</button>
-          <button type="button" disabled={busy||report.page>=pageCount} onClick={()=>void load(report.from,report.to,report.page+1,category)}>Berikutnya</button></div>
+        <div className="flex gap-2"><button type="button" className="!bg-white !text-slate-700 border border-slate-200" disabled={busy||report.page<=1} onClick={()=>void load(report.from,report.to,report.page-1,category,supplierId)}>Sebelumnya</button>
+          <button type="button" disabled={busy||report.page>=pageCount} onClick={()=>void load(report.from,report.to,report.page+1,category,supplierId)}>Berikutnya</button></div>
       </div>
     </section>}
   </main>;
