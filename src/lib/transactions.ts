@@ -18,8 +18,8 @@ export async function createTransaction(input: z.infer<typeof createInput>) {
     }
     const { rows: [transaction] } = await db.query(
       `INSERT INTO transaksi(transaction_date, selesai_date, method_id, type, status, customer_name, supplier_id, debt_kind, debt_due_date)
-       VALUES ($1, CASE WHEN $2 THEN NULL ELSE $1::date END, $3, $4, $5, $6, $7, $8,
-         CASE WHEN $8 IS NOT NULL THEN $1::date + 14 ELSE NULL END) RETURNING *`,
+       VALUES ($1, CASE WHEN $2 THEN NULL ELSE $1::date END, $3, $4, $5, $6, $7, $8::varchar,
+         CASE WHEN $8::varchar IS NOT NULL THEN $1::date + 14 ELSE NULL END) RETURNING *`,
       [input.transactionDate, shipping, 'methodId' in input && !isDebtSale ? input.methodId ?? null : null,
        input.type, shipping ? 'Menunggu Pabrik' : 'Selesai',
        input.type === 'Jual Minuman' ? input.customerName || null : null,supplierId,debtKind]);
