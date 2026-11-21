@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { rupiah, scaled, today } from '@/components/operation';
 
 type Category='minuman'|'plastik';
@@ -14,6 +14,10 @@ type PlasticProduct={plastik_id:number;product:string;stok:string;masuk:string;d
 type PlasticPurchase={transaksi_id:number;date:string;supplier:string;quantity:string;unit_price:string;subtotal:string};
 type GoodsIn={transaksi_id:number;date:string;category:string;product:string;unit:string;party:string;quantity:string;unitPrice:string;subtotal:string};
 type Transaction={transaksi_id:number;date:string;noteDate:string|null;event:string;status:string;customerName:string|null;supplierName:string|null;method:string;masuk:string;keluar:string;total:string};
+type CatalogOption={id:number;name:string};
+type EditableLine={key:number;itemId:string;quantity:string;received:string;unitPrice:string};
+type EditDraft={transaksiId:number;type:string;status:string;customerName:string;supplierName:string;factoryName:string;methodId:string;isDebt:boolean;lines:EditableLine[]};
+type TransactionDetail={error?:string;transaction:{transaksi_id:number;type:string;status:string;customer_name:string|null;supplier_id:number|null;factory_name:string|null;method_id:number|null;debt_kind:string|null};items:{item_id:number;name:string;quantity:string;sent:string;received:string;unit_price:string}[]};
 type Totals={sales:{quantity:string;total:string;notes:number};plastic:{masuk:string;dikirim:string;diterima:string;notes:number};goodsIn:{quantity:string;total:string;notes:number};transactions:{masuk:string;keluar:string;total:string;notes:number}};
 type Report={from:string;to:string;category:Category;supplierId:number|null;plastikId:number|null;buyerName:string|null;movement:'purchase'|'shipment';suppliers:Supplier[];plastics:PlasticOption[];buyers:Buyer[];page:number;pageSize:number;counts:{salesProduct:number;salesBuyer:number;plasticProduct:number;goodsIn:number;transactions:number};totals:Totals;salesByProduct:SalesProduct[];salesByBuyer:SalesBuyer[];plasticByProduct:PlasticProduct[];goodsIn:GoodsIn[];transactions:Transaction[]};
 
@@ -42,6 +46,12 @@ export default function Recap(){
   const [historyProduct,setHistoryProduct]=useState<PlasticProduct|null>(null);
   const [historyBusy,setHistoryBusy]=useState(false);
   const [historyError,setHistoryError]=useState('');
+  const [plasticSearch,setPlasticSearch]=useState('');
+  const [editDraft,setEditDraft]=useState<EditDraft|null>(null);
+  const [editCatalog,setEditCatalog]=useState<{products:CatalogOption[];plastics:CatalogOption[];methods:{method_id:number;payment_method:string}[]}|null>(null);
+  const [editBusy,setEditBusy]=useState(false);
+  const [editError,setEditError]=useState('');
+  const [deleteBusy,setDeleteBusy]=useState<number|null>(null);
   const sequence=useRef(0);
 
   async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId,selectedBuyerName=buyerName,selectedPlastikId=plastikId,selectedMovement=movement,selectedView:View=view){
@@ -93,6 +103,49 @@ export default function Recap(){
     }catch(e){setHistoryError((e as Error).message);}
     finally{setHistoryBusy(false);}
   }
+  async function openTransactionEditor(row:Transaction){
+    setEditBusy(true);setEditError('');
+    try{
+      const [detailResponse,catalogResponse]=await Promise.all([fetch(`/api/transactions/${row.transaksi_id}`),fetch('/api/catalog')]);
+      const detail=await detailResponse.json() as TransactionDetail;const catalog=await catalogResponse.json();
+      if(!detailResponse.ok)throw new Error(detail.error??'Nota gagal dimuat');
+      if(!catalogResponse.ok)throw new Error(catalog.error??'Daftar barang gagal dimuat');
+      const transaction=detail.transaction;
+      setEditCatalog({products:catalog.products.map((item:{product_id:number;product_name:string})=>({id:item.product_id,name:item.product_name})),
+        plastics:catalog.plastik.map((item:{plastik_id:number;plastik_name:string})=>({id:item.plastik_id,name:item.plastik_name})),methods:catalog.methods});
+      setEditDraft({transaksiId:transaction.transaksi_id,type:transaction.type,status:transaction.status,customerName:transaction.customer_name??'',
+        supplierName:row.event==='Beli Plastik'?row.supplierName??'':'',factoryName:transaction.factory_name??'',methodId:transaction.method_id?String(transaction.method_id):'',
+        isDebt:!!transaction.debt_kind,lines:detail.items.map((item,index)=>({key:index+1,itemId:String(item.item_id),quantity:item.quantity??item.sent,
+          received:item.received??item.quantity,unitPrice:item.unit_price}))});
+    }catch(error){setError((error as Error).message);}
+    finally{setEditBusy(false);}
+  }
+  function updateEditDraft(update:Partial<EditDraft>){setEditDraft(current=>current?{...current,...update}:current);}
+  function updateEditLine(index:number,update:Partial<EditableLine>){setEditDraft(current=>current?{...current,lines:current.lines.map((line,lineIndex)=>lineIndex===index?{...line,...update}:line)}:current);}
+  async function saveTransactionEdit(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();if(!editDraft)return;setEditBusy(true);setEditError('');
+    try{
+      const items=editDraft.lines.map(line=>editDraft.type==='Jual Minuman'||editDraft.type==='Restok Minuman'
+        ?{productId:Number(line.itemId),jumlah:Number(line.quantity),hargaSatuan:line.unitPrice}
+        :editDraft.type==='Beli Plastik'?{plastikId:Number(line.itemId),berat:line.quantity,hargaSatuan:line.unitPrice}
+          :{plastikId:Number(line.itemId),beratKirim:line.quantity,beratDiterima:line.received,hargaSatuan:line.unitPrice});
+      const body=editDraft.type==='Jual Minuman'?{type:editDraft.type,methodId:editDraft.isDebt?undefined:Number(editDraft.methodId),isDebt:editDraft.isDebt,customerName:editDraft.customerName,items}
+        :editDraft.type==='Restok Minuman'?{type:editDraft.type,items}
+          :editDraft.type==='Beli Plastik'?{type:editDraft.type,methodId:Number(editDraft.methodId),supplierName:editDraft.supplierName,items}
+            :{type:editDraft.type,factoryName:editDraft.factoryName,methodId:editDraft.methodId?Number(editDraft.methodId):undefined,items};
+      const response=await fetch(`/api/transactions/${editDraft.transaksiId}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+      const result=await response.json();if(!response.ok)throw new Error(result.error??'Perubahan nota gagal disimpan');
+      setEditDraft(null);if(report)void load(report.from,report.to,1,category,supplierId,buyerName,plastikId,movement,view);
+    }catch(error){setEditError((error as Error).message);}
+    finally{setEditBusy(false);}
+  }
+  async function removeTransaction(row:Transaction){
+    if(!window.confirm(`Hapus nota #${row.transaksi_id}? Stok akan disesuaikan kembali.`))return;
+    setDeleteBusy(row.transaksi_id);setError('');
+    try{const response=await fetch(`/api/transactions/${row.transaksi_id}`,{method:'DELETE'});const result=await response.json();
+      if(!response.ok)throw new Error(result.error??'Nota gagal dihapus');if(report)void load(report.from,report.to,1,category,supplierId,buyerName,plastikId,movement,view);
+    }catch(error){setError((error as Error).message);}finally{setDeleteBusy(null);}
+  }
   useEffect(()=>{
     if(!historyProduct)return;
     const closeOnEscape=(event:KeyboardEvent)=>{if(event.key==='Escape')setHistoryProduct(null);};
@@ -109,8 +162,11 @@ export default function Recap(){
     ?view==='item'?'salesProduct':view==='party'?'salesBuyer':view==='goodsIn'?'goodsIn':'transactions'
     :view==='item'?'plasticProduct':view==='goodsIn'?'goodsIn':'transactions';
   const rowCount=report?.counts[countKey]??0;
+  const visiblePlasticProducts=(report?.plasticByProduct??[]).filter(row=>row.product.toLocaleLowerCase('id').includes(plasticSearch.trim().toLocaleLowerCase('id')));
   const pageCount=report?Math.max(1,Math.ceil(rowCount/report.pageSize)):1;
   const metrics:{label:string;value:string}[]=[];
+  const editIsBeverage=!!editDraft&&(editDraft.type==='Jual Minuman'||editDraft.type==='Restok Minuman');
+  const editOptions=editDraft?(editIsBeverage?editCatalog?.products:editCatalog?.plastics)??[]:[];
   if(report){
     const total=report.totals;
     if((view==='item'||view==='party')&&category==='minuman')metrics.push(
@@ -209,9 +265,12 @@ export default function Recap(){
       </div>}
 
       {view==='item'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per barang, dapat digulir" className="table-scroll bg-white">
+        <label className="mb-3 block max-w-md">Cari jenis plastik
+          <input type="search" value={plasticSearch} onChange={event=>setPlasticSearch(event.target.value)} placeholder="Ketik nama plastik…" aria-label="Cari jenis plastik" />
+        </label>
         <table className="purchase-sheet w-full min-w-[1000px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Stok saat ini</th><th>Berat masuk</th><th>Berat dikirim</th><th>Diterima pabrik</th><th>Jumlah nota</th><th>Aksi</th></tr></thead><tbody>
-          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td className="font-bold">{numberFormat.format(Number(row.stok))} kg</td><td>{numberFormat.format(Number(row.masuk))} kg</td><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td><td>{row.notes}</td><td><button type="button" className="!px-3 !py-1.5 text-xs" onClick={()=>void openPurchaseHistory(row)}>Riwayat beli</button></td></tr>)}
-          {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?5:7}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
+          {visiblePlasticProducts.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td className="font-bold">{numberFormat.format(Number(row.stok))} kg</td><td>{numberFormat.format(Number(row.masuk))} kg</td><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td><td>{row.notes}</td><td><button type="button" className="!px-3 !py-1.5 text-xs" onClick={()=>void openPurchaseHistory(row)}>Riwayat beli</button></td></tr>)}
+          {!visiblePlasticProducts.length&&<tr><td colSpan={7}>{plasticSearch?'Tidak ada jenis plastik yang cocok.':'Belum ada jenis plastik.'}</td></tr>}
         </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH PLASTIK</td><td>{numberFormat.format(report.plasticByProduct.reduce((sum,row)=>sum+Number(row.stok),0))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td><td>{report.totals.plastic.notes}</td><td/></tr></tfoot></table>
       </div>}
 
@@ -230,10 +289,10 @@ export default function Recap(){
       </div>}
 
       {view==='transactions'&&<div tabIndex={0} role="region" aria-label={`Riwayat nota ${category}, dapat digulir`} className="table-scroll bg-white">
-        <table className="purchase-sheet w-full min-w-[1120px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal transaksi</th><th>Tanggal nota pabrik</th><th>No. nota</th><th>Kegiatan</th><th>Pembeli / pemasok</th><th>Status</th><th>Metode</th><th>Uang masuk</th><th>Uang keluar</th><th>Total nota</th></tr></thead><tbody>
-          {report.transactions.map(row=><tr key={row.transaksi_id}><td>{dateLabel(row.date)}</td><td>{row.noteDate?dateLabel(row.noteDate):'—'}</td><td>#{row.transaksi_id}</td><td>{row.event}</td><td>{row.customerName||row.supplierName||(category==='plastik'&&row.event==='Kirim Pabrik'?'Pabrik':'—')}</td><td>{row.status}</td><td>{row.method}</td><td>{money(row.masuk)}</td><td>{money(row.keluar)}</td><td>{money(row.total)}</td></tr>)}
-          {!report.transactions.length&&<tr><td colSpan={10}>Tidak ada nota dalam periode ini.</td></tr>}
-        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={7}>TOTAL SELURUH FILTER · {report.totals.transactions.notes} nota</td><td>{money(report.totals.transactions.masuk)}</td><td>{money(report.totals.transactions.keluar)}</td><td>{money(report.totals.transactions.total)}</td></tr></tfoot></table>
+        <table className="purchase-sheet w-full min-w-[1240px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal transaksi</th><th>Tanggal nota pabrik</th><th>No. nota</th><th>Kegiatan</th><th>Pembeli / pemasok</th><th>Status</th><th>Metode</th><th>Uang masuk</th><th>Uang keluar</th><th>Total nota</th><th>Aksi</th></tr></thead><tbody>
+          {report.transactions.map(row=><tr key={row.transaksi_id}><td>{dateLabel(row.date)}</td><td>{row.noteDate?dateLabel(row.noteDate):'—'}</td><td>#{row.transaksi_id}</td><td>{row.event}</td><td>{row.customerName||row.supplierName||(category==='plastik'&&row.event==='Kirim Pabrik'?'Pabrik':'—')}</td><td>{row.status}</td><td>{row.method}</td><td>{money(row.masuk)}</td><td>{money(row.keluar)}</td><td>{money(row.total)}</td><td><div className="flex gap-1"><button type="button" className="!px-2 !py-1.5 text-xs" onClick={()=>void openTransactionEditor(row)}>Edit</button><button type="button" className="!bg-red-700 !px-2 !py-1.5 text-xs" disabled={deleteBusy===row.transaksi_id} onClick={()=>void removeTransaction(row)}>{deleteBusy===row.transaksi_id?'Menghapus…':'Hapus'}</button></div></td></tr>)}
+          {!report.transactions.length&&<tr><td colSpan={11}>Tidak ada nota dalam periode ini.</td></tr>}
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td colSpan={7}>TOTAL SELURUH FILTER · {report.totals.transactions.notes} nota</td><td>{money(report.totals.transactions.masuk)}</td><td>{money(report.totals.transactions.keluar)}</td><td>{money(report.totals.transactions.total)}</td><td/></tr></tfoot></table>
       </div>}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -242,6 +301,35 @@ export default function Recap(){
           <button type="button" disabled={busy||report.page>=pageCount} onClick={()=>void load(report.from,report.to,report.page+1,category,supplierId)}>Berikutnya</button></div>
       </div>
     </section>}
+    {editDraft&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={event=>{if(event.target===event.currentTarget&&!editBusy)setEditDraft(null);}}>
+      <section role="dialog" aria-modal="true" aria-labelledby="edit-transaction-title" className="max-h-[92dvh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white p-5">
+          <div><p className="text-sm text-emerald-700">Ubah rincian nota</p><h2 id="edit-transaction-title" className="mt-1 text-xl font-bold">#{editDraft.transaksiId} · {editDraft.type}</h2></div>
+          <button type="button" className="!bg-slate-100 !px-3 !py-1.5 !text-slate-700" disabled={editBusy} onClick={()=>setEditDraft(null)}>Tutup</button>
+        </header>
+        <form className="space-y-5 p-5" onSubmit={saveTransactionEdit}>
+          {editDraft.type==='Jual Minuman'&&<div className="grid gap-3 sm:grid-cols-2">
+            <label>Nama pembeli<input value={editDraft.customerName} onChange={event=>updateEditDraft({customerName:event.target.value})} /></label>
+            <label className="flex items-center gap-2 self-end pb-3"><input type="checkbox" checked={editDraft.isDebt} onChange={event=>updateEditDraft({isDebt:event.target.checked})} />Tandai sebagai hutang</label>
+            {!editDraft.isDebt&&<label>Metode pembayaran<select required value={editDraft.methodId} onChange={event=>updateEditDraft({methodId:event.target.value})}><option value="">Pilih metode</option>{(editCatalog?.methods??[]).map(method=><option key={method.method_id} value={method.method_id}>{method.payment_method}</option>)}</select></label>}
+          </div>}
+          {editDraft.type==='Beli Plastik'&&<div className="grid gap-3 sm:grid-cols-2"><label>Supplier<input required value={editDraft.supplierName} onChange={event=>updateEditDraft({supplierName:event.target.value})} /></label><label>Metode pembayaran<select required value={editDraft.methodId} onChange={event=>updateEditDraft({methodId:event.target.value})}><option value="">Pilih metode</option>{(editCatalog?.methods??[]).map(method=><option key={method.method_id} value={method.method_id}>{method.payment_method}</option>)}</select></label></div>}
+          {editDraft.type==='Kirim Pabrik'&&<div className="grid gap-3 sm:grid-cols-2"><label>Pabrik tujuan<input required value={editDraft.factoryName} onChange={event=>updateEditDraft({factoryName:event.target.value})} /></label>{editDraft.status==='Selesai'&&<label>Metode pembayaran<select value={editDraft.methodId} onChange={event=>updateEditDraft({methodId:event.target.value})}><option value="">Tidak diubah</option>{(editCatalog?.methods??[]).map(method=><option key={method.method_id} value={method.method_id}>{method.payment_method}</option>)}</select></label>}</div>}
+          <div className="space-y-3">
+            {editDraft.lines.map((line,index)=><div key={line.key} className="grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+              <label>{editIsBeverage?'Produk minuman':'Jenis plastik'}<select required value={line.itemId} onChange={event=>updateEditLine(index,{itemId:event.target.value})}><option value="">Pilih barang</option>{editOptions.map(option=><option key={option.id} value={option.id} disabled={editDraft.lines.some((other,otherIndex)=>otherIndex!==index&&other.itemId===String(option.id))}>{option.name}</option>)}</select></label>
+              <label>{editIsBeverage?'Jumlah (unit)':editDraft.type==='Beli Plastik'?'Berat (kg)':'Berat kirim (kg)'}<input required type="number" min={editIsBeverage?'1':'0.01'} step={editIsBeverage?'1':'0.01'} value={line.quantity} onChange={event=>updateEditLine(index,{quantity:event.target.value})} /></label>
+              {editDraft.type==='Kirim Pabrik'&&<label>Diterima (kg)<input required type="number" min="0" step="0.01" disabled={editDraft.status==='Menunggu Pabrik'} value={editDraft.status==='Menunggu Pabrik'?'0':line.received} onChange={event=>updateEditLine(index,{received:event.target.value})} /></label>}
+              <label>{editDraft.type==='Kirim Pabrik'&&editDraft.status==='Menunggu Pabrik'?'Harga / kg (setelah nota pabrik)':'Harga / '+(editIsBeverage?'unit':'kg')}<input required type="number" min="0" step="0.01" disabled={editDraft.type==='Kirim Pabrik'&&editDraft.status==='Menunggu Pabrik'} value={line.unitPrice} onChange={event=>updateEditLine(index,{unitPrice:event.target.value})} /></label>
+              <button type="button" className="!bg-red-700 self-end" disabled={editDraft.lines.length<=1} onClick={()=>updateEditDraft({lines:editDraft.lines.filter((_,lineIndex)=>lineIndex!==index)})}>Hapus barang</button>
+            </div>)}
+            <button type="button" className="!bg-white !text-slate-700 border border-slate-200" onClick={()=>updateEditDraft({lines:[...editDraft.lines,{key:Date.now(),itemId:'',quantity:editIsBeverage?'1':'0.01',received:'0',unitPrice:'0'}]})}>+ Tambah barang</button>
+          </div>
+          {editError&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{editError}</p>}
+          <div className="flex justify-end gap-2 border-t border-slate-200 pt-4"><button type="button" className="!bg-white !text-slate-700 border border-slate-200" disabled={editBusy} onClick={()=>setEditDraft(null)}>Batal</button><button type="submit" disabled={editBusy}>{editBusy?'Menyimpan…':'Simpan perubahan'}</button></div>
+        </form>
+      </section>
+    </div>}
     {historyProduct&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={event=>{if(event.target===event.currentTarget)setHistoryProduct(null);}}>
       <section role="dialog" aria-modal="true" aria-labelledby="plastic-purchase-history-title" className="max-h-[90dvh] w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">

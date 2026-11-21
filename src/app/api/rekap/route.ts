@@ -72,7 +72,7 @@ export async function GET(request:Request){
           COUNT(DISTINCT t.transaksi_id)::int AS notes
           FROM plastik p LEFT JOIN detail_transaksi_plastik d USING(plastik_id)
           LEFT JOIN transaksi t ON t.transaksi_id=d.transaksi_id AND t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik')
-          GROUP BY p.plastik_id,p.plastik_name,p.stok ORDER BY p.plastik_name LIMIT $1 OFFSET $2`,[effectivePageSize,offset]):db.query(`SELECT p.plastik_id,p.plastik_name AS product,p.stok::text AS stok,
+          GROUP BY p.plastik_id,p.plastik_name,p.stok ORDER BY p.stok DESC,p.plastik_name LIMIT $1 OFFSET $2`,[effectivePageSize,offset]):db.query(`SELECT p.plastik_id,p.plastik_name AS product,p.stok::text AS stok,
           COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Beli Plastik'),0)::text AS masuk,
           COALESCE(SUM(d.berat_kirim) FILTER(WHERE t.type='Kirim Pabrik'),0)::text AS dikirim,
           COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Kirim Pabrik' AND t.status='Selesai'),0)::text AS diterima,
