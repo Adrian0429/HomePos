@@ -44,10 +44,11 @@ export default function Recap(){
   const [historyError,setHistoryError]=useState('');
   const sequence=useRef(0);
 
-  async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId,selectedBuyerName=buyerName,selectedPlastikId=plastikId,selectedMovement=movement){
+  async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId,selectedBuyerName=buyerName,selectedPlastikId=plastikId,selectedMovement=movement,selectedView:View=view){
     const seq=++sequence.current;setBusy(true);setError('');
     try{
       const params=new URLSearchParams({from:start,to:end,page:String(page),category:selectedCategory});
+      if(selectedCategory==='plastik'&&selectedView==='item')params.set('scope','current');
       if(selectedSupplierId)params.set('supplierId',selectedSupplierId);
       if(selectedBuyerName)params.set('buyerName',selectedBuyerName);
       if(selectedPlastikId)params.set('plastikId',selectedPlastikId);
@@ -75,13 +76,13 @@ export default function Recap(){
     const nextBuyerName=next==='plastik'?'':buyerName;
     setCategory(next);setSupplierId(nextSupplierId);setBuyerName(nextBuyerName);setView('item');
     const start=from||report?.from||today();const end=to||report?.to||today();
-    setFrom(start);setTo(end);void load(start,end,1,next,nextSupplierId,nextBuyerName);
+    setFrom(start);setTo(end);void load(start,end,1,next,nextSupplierId,nextBuyerName,plastikId,movement,'item');
   }
   function chooseSupplier(next:string){setSupplierId(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,next);}
   function chooseBuyer(next:string){setBuyerName(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,supplierId,next);}
   function choosePlastic(next:string){setPlastikId(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,supplierId,buyerName,next,movement);}
   function chooseMovement(next:'purchase'|'shipment'){setMovement(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,supplierId,buyerName,plastikId,next);}
-  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId,buyerName);}
+  function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId,buyerName,plastikId,movement,next);}
   async function openPurchaseHistory(product:PlasticProduct){
     setHistoryProduct(product);setPurchaseHistory([]);setHistoryError('');setHistoryBusy(true);
     try{
@@ -117,7 +118,7 @@ export default function Recap(){
       {label:'Total penjualan',value:money(total.sales.total)},
       {label:'Jumlah nota',value:String(total.sales.notes)},
     );
-    else if((view==='item'||view==='party')&&category==='plastik'){
+    else if((view==='item'||view==='party')&&category==='plastik'&&view!=='item'){
       metrics.push({label:'Berat masuk',value:`${numberFormat.format(Number(total.plastic.masuk))} kg`},
         ...(supplierId?[]:[{label:'Berat dikirim',value:`${numberFormat.format(Number(total.plastic.dikirim))} kg`},{label:'Diterima pabrik',value:`${numberFormat.format(Number(total.plastic.diterima))} kg`}]),
         {label:'Jumlah nota',value:String(total.plastic.notes)});
@@ -154,7 +155,7 @@ export default function Recap(){
       <button type="button" aria-pressed={category==='minuman'} className={category==='minuman'?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseCategory('minuman')}>Minuman</button>
       <button type="button" aria-pressed={category==='plastik'} className={category==='plastik'?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseCategory('plastik')}>Plastik</button>
     </div>
-    {category==='plastik'&&<section aria-label="Filter pembelian plastik" className="mb-4 grid max-w-3xl gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+    {category==='plastik'&&view!=='item'&&<section aria-label="Filter pembelian plastik" className="mb-4 grid max-w-3xl gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
       <label>Filter jenis plastik
         <select value={plastikId} onChange={event=>choosePlastic(event.target.value)}>
           <option value="">Semua jenis plastik</option>
@@ -185,8 +186,8 @@ export default function Recap(){
 
     {report&&<section aria-busy={busy} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="text-lg font-semibold">{category==='plastik'&&(view==='goodsIn'||view==='transactions')?viewOptions.find(item=>item.id===view)?.label:`${viewOptions.find(item=>item.id===view)?.label} · ${category==='minuman'?'Minuman':'Plastik'}`}</h2>
-          <p className="mt-1 text-sm text-slate-500">{dateLabel(report.from)} – {dateLabel(report.to)} · {rowCount} baris{busy?' · Memuat data terbaru…':''}</p>
+        <div><h2 className="text-lg font-semibold">{category==='plastik'&&(view==='goodsIn'||view==='transactions'||view==='item')?viewOptions.find(item=>item.id===view)?.label:`${viewOptions.find(item=>item.id===view)?.label} · ${category==='minuman'?'Minuman':'Plastik'}`}</h2>
+          <p className="mt-1 text-sm text-slate-500">{category==='plastik'&&view==='item'?`Seluruh jenis plastik · stok saat ini · ${rowCount} jenis${busy?' · Memuat data terbaru…':''}`:`${dateLabel(report.from)} – ${dateLabel(report.to)} · ${rowCount} baris${busy?' · Memuat data terbaru…':''}`}</p>
         </div>
         {category==='plastik'&&view==='transactions'&&<div className="flex flex-wrap gap-2" role="group" aria-label="Jenis riwayat transaksi plastik">
           <button type="button" aria-pressed={movement==='purchase'} className={movement==='purchase'?'':'!bg-white !text-slate-700 border border-slate-200'} onClick={()=>chooseMovement('purchase')}>Pembelian Plastik</button>
@@ -208,10 +209,10 @@ export default function Recap(){
       </div>}
 
       {view==='item'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per barang, dapat digulir" className="table-scroll bg-white">
-        <table className="purchase-sheet w-full min-w-[1000px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Stok saat ini</th><th>Berat masuk</th>{!supplierId&&<><th>Berat dikirim</th><th>Diterima pabrik</th></>}<th>Jumlah nota</th><th>Aksi</th></tr></thead><tbody>
-          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.stok))} kg</td><td>{numberFormat.format(Number(row.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td></>}<td>{row.notes}</td><td><button type="button" className="!px-3 !py-1.5 text-xs" onClick={()=>void openPurchaseHistory(row)}>Riwayat beli</button></td></tr>)}
+        <table className="purchase-sheet w-full min-w-[1000px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Stok saat ini</th><th>Berat masuk</th><th>Berat dikirim</th><th>Diterima pabrik</th><th>Jumlah nota</th><th>Aksi</th></tr></thead><tbody>
+          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td className="font-bold">{numberFormat.format(Number(row.stok))} kg</td><td>{numberFormat.format(Number(row.masuk))} kg</td><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td><td>{row.notes}</td><td><button type="button" className="!px-3 !py-1.5 text-xs" onClick={()=>void openPurchaseHistory(row)}>Riwayat beli</button></td></tr>)}
           {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?5:7}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
-        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH FILTER</td><td>—</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td></>}<td>{report.totals.plastic.notes}</td><td/></tr></tfoot></table>
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH PLASTIK</td><td>{numberFormat.format(report.plasticByProduct.reduce((sum,row)=>sum+Number(row.stok),0))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td><td>{report.totals.plastic.notes}</td><td/></tr></tfoot></table>
       </div>}
 
       {view==='party'&&category==='minuman'&&<div tabIndex={0} role="region" aria-label="Penjualan per pembeli, dapat digulir" className="table-scroll bg-white">
