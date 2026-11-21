@@ -1,12 +1,13 @@
 'use client';
 import MoneyInput from '@/components/money-input';
 import SearchableSelect from '@/components/searchable-select';
+import CreatableSelect from '@/components/creatable-select';
 import { useEffect, useState, type FormEvent } from 'react';
 import { decimalDisplay, lineTotal, rupiah } from '@/components/operation';
 type Plastic = {plastik_id:number; plastik_name:string; stok:string};
 type Method = {method_id:number; payment_method:string};
 type Detail = {detail_transaksi_plastik_id:number; plastik_id:number; berat_kirim:string};
-type Shipment = {transaksi_id:number; items:Detail[]};
+type Shipment = {transaksi_id:number; factory_name:string|null; items:Detail[]};
 type Draft = {plastikId:string; beratKirim:string};
 async function api(path:string, init?:RequestInit) {
   const response = await fetch(path, init);
@@ -18,8 +19,10 @@ const today = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Jayapura',y
 export default function Home() {
   const [plastics,setPlastics] = useState<Plastic[]>([]);
   const [methods,setMethods] = useState<Method[]>([]);
+  const [factories,setFactories] = useState<string[]>([]);
   const [pending,setPending] = useState<Shipment[]>([]);
   const [date,setDate] = useState('');
+  const [factoryName,setFactoryName] = useState('');
   const [section,setSection] = useState<1|2>(1);
   const [lines,setLines] = useState<Draft[]>([{plastikId:'',beratKirim:''}]);
   const [selected,setSelected] = useState('');
@@ -31,7 +34,7 @@ export default function Home() {
   const shipment = pending.find(t => String(t.transaksi_id) === selected);
   async function refresh() {
     const [catalog,transactions] = await Promise.all([api('/api/catalog'),api('/api/transactions')]);
-    setPlastics(catalog.plastik); setMethods(catalog.methods); setPending(transactions); setLoaded(true);
+    setPlastics(catalog.plastik); setMethods(catalog.methods); setFactories(catalog.factories??[]); setPending(transactions); setLoaded(true);
   }
   useEffect(() => { setDate(today()); refresh().catch(e => setMessage(e.message)); }, []);
   async function submit(event:FormEvent, stage:1|2) {
@@ -42,7 +45,7 @@ export default function Home() {
     try {
       const result = stage === 1
         ? await api('/api/transactions', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-            type:'Kirim Pabrik',transactionDate:date,items:lines.map(l => ({plastikId:Number(l.plastikId),beratKirim:l.beratKirim}))
+            type:'Kirim Pabrik',transactionDate:date,factoryName:factoryName.trim(),items:lines.map(l => ({plastikId:Number(l.plastikId),beratKirim:l.beratKirim}))
           })})
         : await api(`/api/transactions/${selected}/settle`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
             methodId:Number(method),
@@ -77,6 +80,10 @@ export default function Home() {
         <p className="mb-3 text-sm text-slate-500">Stok berkurang sesuai berat kirim. Nilai transaksi masih Rp 0.</p>
         <fieldset disabled={busy || !loaded} className="space-y-3">
           <label className="max-w-sm">Tanggal pengiriman<input required type="date" value={date} max={today()} onChange={e => setDate(e.target.value)}/></label>
+          <label className="max-w-sm">Pabrik tujuan
+            <CreatableSelect ariaLabel="Pabrik tujuan" value={factoryName} onChange={setFactoryName}
+              options={factories} placeholder="Pilih atau ketik nama pabrik tujuan" required/>
+          </label>
           <div tabIndex={0} role="region" aria-label="Rincian pengiriman, dapat digulir" className="table-scroll border border-slate-300 bg-white">
             <table className="purchase-sheet w-full min-w-[620px] border-collapse text-sm">
               <caption className="sr-only">Rincian truk berangkat</caption>
@@ -102,10 +109,11 @@ export default function Home() {
         <fieldset disabled={busy || !loaded} className="space-y-3">
           <div className="grid gap-4 sm:grid-cols-2">
             <label>Pengiriman menunggu nota<select required value={selected} onChange={e => {setSelected(e.target.value);setNota({});}}>
-              <option value="">Pilih pengiriman</option>{pending.map(t => <option key={t.transaksi_id} value={t.transaksi_id}>Pengiriman #{t.transaksi_id}</option>)}
+              <option value="">Pilih pengiriman</option>{pending.map(t => <option key={t.transaksi_id} value={t.transaksi_id}>{t.factory_name||'Pabrik tujuan belum diisi'} · Pengiriman #{t.transaksi_id}</option>)}
             </select></label>
             <label>Metode bayar<select required value={method} onChange={e => setMethod(e.target.value)}><option value="">Pilih metode bayar</option>{methods.map(m => <option key={m.method_id} value={m.method_id}>{m.payment_method}</option>)}</select></label>
           </div>
+          {shipment&&<p className="-mt-2 text-sm text-slate-600">Pabrik tujuan: <strong>{shipment.factory_name||'Belum dicatat'}</strong></p>}
           <div tabIndex={0} role="region" aria-label="Rincian nota pabrik, dapat digulir" className="table-scroll border border-slate-300 bg-white">
             <table className="purchase-sheet w-full min-w-[800px] border-collapse text-sm">
               <caption className="sr-only">Rincian nota pabrik</caption>

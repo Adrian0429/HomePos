@@ -77,7 +77,7 @@ export async function GET(request:Request){
           GROUP BY p.plastik_id) items`,[...args,supplierId]),
         db.query(`SELECT to_char(t.transaction_date,'YYYY-MM-DD') AS date,p.plastik_name AS product,
           CASE WHEN t.type='Beli Plastik' THEN 'Barang masuk' ELSE 'Kirim ke pabrik' END AS movement,
-          COALESCE(s.supplier_name,'Pabrik') AS party,t.status::text AS status,
+          COALESCE(t.factory_name,s.supplier_name,'Pabrik') AS party,t.status::text AS status,
           SUM(CASE WHEN t.type='Beli Plastik' THEN d.berat_diterima ELSE d.berat_kirim END)::text AS quantity,
           SUM(CASE WHEN t.type='Kirim Pabrik' THEN d.berat_diterima ELSE 0 END)::text AS diterima,
           COUNT(DISTINCT t.transaksi_id)::int AS notes
@@ -85,15 +85,15 @@ export async function GET(request:Request){
           LEFT JOIN supplier s USING(supplier_id)
           WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
             AND ($3::int IS NULL OR (t.type='Beli Plastik' AND t.supplier_id=$3))
-          GROUP BY t.transaction_date,p.plastik_id,p.plastik_name,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
+          GROUP BY t.transaction_date,p.plastik_id,p.plastik_name,t.type,t.status,COALESCE(t.factory_name,s.supplier_name,'Pabrik')
           ORDER BY t.transaction_date DESC,p.plastik_name,movement,party LIMIT $4 OFFSET $5`,[...args,supplierId,pageSize,offset]),
         db.query(`SELECT COUNT(*)::int AS count FROM (
-          SELECT t.transaction_date,p.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')
+          SELECT t.transaction_date,p.plastik_id,t.type,t.status,COALESCE(t.factory_name,s.supplier_name,'Pabrik')
           FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
           LEFT JOIN supplier s USING(supplier_id)
           WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
             AND ($3::int IS NULL OR (t.type='Beli Plastik' AND t.supplier_id=$3))
-          GROUP BY t.transaction_date,p.plastik_id,t.type,t.status,COALESCE(s.supplier_name,'Pabrik')) movements`,[...args,supplierId]),
+          GROUP BY t.transaction_date,p.plastik_id,t.type,t.status,COALESCE(t.factory_name,s.supplier_name,'Pabrik')) movements`,[...args,supplierId]),
         db.query(`SELECT
           COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Beli Plastik'),0)::text AS masuk,
           COALESCE(SUM(d.berat_kirim) FILTER(WHERE t.type='Kirim Pabrik'),0)::text AS dikirim,
@@ -112,7 +112,7 @@ export async function GET(request:Request){
           WHERE category=CASE WHEN $3='minuman' THEN 'Minuman' ELSE 'Plastik' END AND ($4::int IS NULL OR supplier_id=$4)`,supplierArgs),
         db.query(`SELECT t.transaksi_id,to_char(t.transaction_date,'YYYY-MM-DD') AS date,
           to_char(t.selesai_date,'YYYY-MM-DD') AS "noteDate",t.type::text AS event,t.status::text,
-          t.customer_name AS "customerName",s.supplier_name AS "supplierName",COALESCE(m.payment_method,'—') AS method,
+          t.customer_name AS "customerName",COALESCE(t.factory_name,s.supplier_name) AS "supplierName",COALESCE(m.payment_method,'—') AS method,
           CASE WHEN t.status='Selesai' AND (t.type='Jual Minuman' OR t.type='Kirim Pabrik') THEN t.total_nominal ELSE 0 END::text AS masuk,
           CASE WHEN t.status='Selesai' AND t.type IN ('Beli Plastik','Restok Minuman') THEN t.total_nominal ELSE 0 END::text AS keluar,
           t.total_nominal::text AS total

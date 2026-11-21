@@ -6,7 +6,7 @@ if(!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diisi');
 const db=new pg.Client({connectionString:process.env.DATABASE_URL});
 try {
   await db.connect();
-  for (const file of ['001-restok-minuman.sql','002-pembeli-pos.sql','003-supplier-plastik.sql','004-auth.sql','005-piutang-stok.sql']) {
+  for (const file of ['001-restok-minuman.sql','002-pembeli-pos.sql','003-supplier-plastik.sql','004-auth.sql','005-piutang-stok.sql','006-factory-destination.sql']) {
     await db.query(await readFile(new URL(`../db/migrations/${file}`,import.meta.url),'utf8'));
   }
   const { randomBytes, scryptSync } = await import('node:crypto');

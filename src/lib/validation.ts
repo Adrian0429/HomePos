@@ -21,7 +21,7 @@ export const createInput = z.discriminatedUnion('type', [
   z.object({type: z.literal('Beli Plastik'), transactionDate: date, methodId: paymentId,
     supplierName: z.string().trim().min(1,'Pilih atau isi nama supplier').max(160),
     items: lines(z.object({plastikId: id, berat: positiveWeight, hargaSatuan: price}))}),
-  z.object({type: z.literal('Kirim Pabrik'), transactionDate: date,
+  z.object({type: z.literal('Kirim Pabrik'), transactionDate: date,factoryName:z.string().trim().min(1,'Isi nama pabrik tujuan').max(160),
     items: lines(z.object({plastikId: id, beratKirim: positiveWeight}))})
 ]);
 export const settleInput = z.object({methodId: paymentId, items: lines(z.object({
