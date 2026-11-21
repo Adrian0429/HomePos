@@ -9,7 +9,8 @@ type Supplier={supplier_id:number;supplier_name:string};
 type Buyer={customer_name:string};
 type SalesProduct={product_id:number;product:string;brand:string;quantity:string;total:string;notes:number};
 type SalesBuyer={customerName:string;quantity:string;total:string;notes:number};
-type PlasticProduct={plastik_id:number;product:string;masuk:string;dikirim:string;diterima:string;notes:number};
+type PlasticProduct={plastik_id:number;product:string;stok:string;masuk:string;dikirim:string;diterima:string;notes:number};
+type PlasticPurchase={transaksi_id:number;date:string;supplier:string;quantity:string;unit_price:string;subtotal:string};
 type PlasticParty={date:string;product:string;movement:string;party:string;status:string;quantity:string;diterima:string;notes:number};
 type GoodsIn={transaksi_id:number;date:string;category:string;product:string;unit:string;party:string;quantity:string;unitPrice:string;subtotal:string};
 type Transaction={transaksi_id:number;date:string;noteDate:string|null;event:string;status:string;customerName:string|null;supplierName:string|null;method:string;masuk:string;keluar:string;total:string};
@@ -35,6 +36,10 @@ export default function Recap(){
   const [report,setReport]=useState<Report|null>(null);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [purchaseHistory,setPurchaseHistory]=useState<PlasticPurchase[]>([]);
+  const [historyProduct,setHistoryProduct]=useState<PlasticProduct|null>(null);
+  const [historyBusy,setHistoryBusy]=useState(false);
+  const [historyError,setHistoryError]=useState('');
   const sequence=useRef(0);
 
   async function load(start:string,end:string,page=1,selectedCategory:Category=category,selectedSupplierId=supplierId,selectedBuyerName=buyerName){
@@ -71,8 +76,24 @@ export default function Recap(){
   function chooseSupplier(next:string){setSupplierId(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,next);}
   function chooseBuyer(next:string){setBuyerName(next);const start=report?.from||from||today();const end=report?.to||to||today();void load(start,end,1,category,supplierId,next);}
   function chooseView(next:View){setView(next);if(report)void load(report.from,report.to,1,category,supplierId,buyerName);}
+  async function openPurchaseHistory(product:PlasticProduct){
+    setHistoryProduct(product);setPurchaseHistory([]);setHistoryError('');setHistoryBusy(true);
+    try{
+      const response=await fetch(`/api/rekap/plastik/${product.plastik_id}/pembelian`);
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error??'Riwayat pembelian gagal dimuat');
+      setPurchaseHistory(data);
+    }catch(e){setHistoryError((e as Error).message);}
+    finally{setHistoryBusy(false);}
+  }
+  useEffect(()=>{
+    if(!historyProduct)return;
+    const closeOnEscape=(event:KeyboardEvent)=>{if(event.key==='Escape')setHistoryProduct(null);};
+    window.addEventListener('keydown',closeOnEscape);
+    return()=>window.removeEventListener('keydown',closeOnEscape);
+  },[historyProduct]);
   const viewOptions:{id:View;label:string}[]=[
-    {id:'item',label:category==='minuman'?'Penjualan per barang':'Pergerakan per barang'},
+    {id:'item',label:category==='minuman'?'Penjualan per barang':'Stok Pergerakan Plastik'},
     {id:'party',label:category==='minuman'?'Penjualan per pembeli':'Pemasok / tujuan pabrik'},
     {id:'goodsIn',label:'Barang masuk'},
     {id:'transactions',label:'Riwayat per nota'},
@@ -171,10 +192,10 @@ export default function Recap(){
       </div>}
 
       {view==='item'&&category==='plastik'&&<div tabIndex={0} role="region" aria-label="Pergerakan plastik per barang, dapat digulir" className="table-scroll bg-white">
-        <table className="purchase-sheet w-full min-w-[800px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Berat masuk</th>{!supplierId&&<><th>Berat dikirim</th><th>Diterima pabrik</th></>}<th>Jumlah nota</th></tr></thead><tbody>
-          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td></>}<td>{row.notes}</td></tr>)}
-          {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?3:5}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
-        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH FILTER</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td></>}<td>{report.totals.plastic.notes}</td></tr></tfoot></table>
+        <table className="purchase-sheet w-full min-w-[1000px] text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Jenis plastik</th><th>Stok saat ini</th><th>Berat masuk</th>{!supplierId&&<><th>Berat dikirim</th><th>Diterima pabrik</th></>}<th>Jumlah nota</th><th>Aksi</th></tr></thead><tbody>
+          {report.plasticByProduct.map(row=><tr key={row.plastik_id}><td>{row.product}</td><td>{numberFormat.format(Number(row.stok))} kg</td><td>{numberFormat.format(Number(row.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(row.dikirim))} kg</td><td>{numberFormat.format(Number(row.diterima))} kg</td></>}<td>{row.notes}</td><td><button type="button" className="!px-3 !py-1.5 text-xs" onClick={()=>void openPurchaseHistory(row)}>Riwayat beli</button></td></tr>)}
+          {!report.plasticByProduct.length&&<tr><td colSpan={supplierId?5:7}>Tidak ada pergerakan plastik dalam periode ini.</td></tr>}
+        </tbody><tfoot className="bg-emerald-50 font-bold"><tr><td>TOTAL SELURUH FILTER</td><td>—</td><td>{numberFormat.format(Number(report.totals.plastic.masuk))} kg</td>{!supplierId&&<><td>{numberFormat.format(Number(report.totals.plastic.dikirim))} kg</td><td>{numberFormat.format(Number(report.totals.plastic.diterima))} kg</td></>}<td>{report.totals.plastic.notes}</td><td/></tr></tfoot></table>
       </div>}
 
       {view==='party'&&category==='minuman'&&<div tabIndex={0} role="region" aria-label="Penjualan per pembeli, dapat digulir" className="table-scroll bg-white">
@@ -211,5 +232,23 @@ export default function Recap(){
           <button type="button" disabled={busy||report.page>=pageCount} onClick={()=>void load(report.from,report.to,report.page+1,category,supplierId)}>Berikutnya</button></div>
       </div>
     </section>}
+    {historyProduct&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={event=>{if(event.target===event.currentTarget)setHistoryProduct(null);}}>
+      <section role="dialog" aria-modal="true" aria-labelledby="plastic-purchase-history-title" className="max-h-[90dvh] w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div><p className="text-sm text-emerald-700">Riwayat pembelian semua periode</p><h2 id="plastic-purchase-history-title" className="mt-1 text-xl font-bold">{historyProduct.product}</h2></div>
+          <button type="button" className="!bg-slate-100 !px-3 !py-1.5 !text-slate-700" aria-label="Tutup riwayat pembelian" onClick={()=>setHistoryProduct(null)}>Tutup</button>
+        </header>
+        <div className="p-5">
+          {historyBusy&&<p role="status" className="py-8 text-center text-slate-500">Memuat riwayat pembelian…</p>}
+          {historyError&&<p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{historyError}</p>}
+          {!historyBusy&&!historyError&&!purchaseHistory.length&&<p className="rounded-lg bg-slate-50 p-5 text-slate-600">Belum ada riwayat pembelian untuk jenis plastik ini.</p>}
+          {!historyBusy&&!historyError&&!!purchaseHistory.length&&<div className="table-scroll rounded-lg border border-slate-200">
+            <table className="purchase-sheet w-full min-w-[700px] border-collapse text-sm"><thead className="bg-emerald-50 text-left"><tr><th>Tanggal</th><th>Supplier</th><th>Jumlah beli</th><th>Harga beli / kg</th></tr></thead><tbody>
+              {purchaseHistory.map(row=><tr key={`${row.transaksi_id}-${row.date}-${row.supplier}`}><td>{dateLabel(row.date)}</td><td>{row.supplier}</td><td>{numberFormat.format(Number(row.quantity))} kg</td><td>{money(row.unit_price)} / kg</td></tr>)}
+            </tbody></table>
+          </div>}
+        </div>
+      </section>
+    </div>}
   </main>;
 }

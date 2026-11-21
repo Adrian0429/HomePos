@@ -61,7 +61,7 @@ export async function GET(request:Request){
           FROM detail_transaksi_product d JOIN transaksi t USING(transaksi_id)
           WHERE t.status='Selesai' AND t.type='Jual Minuman' AND t.transaction_date BETWEEN $1::date AND $2::date
             AND ($3::text IS NULL OR COALESCE(NULLIF(BTRIM(t.customer_name),''),'Umum')=$3)`,[...args,buyerName]),
-        db.query(`SELECT p.plastik_id,p.plastik_name AS product,
+        db.query(`SELECT p.plastik_id,p.plastik_name AS product,p.stok::text AS stok,
           COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Beli Plastik'),0)::text AS masuk,
           COALESCE(SUM(d.berat_kirim) FILTER(WHERE t.type='Kirim Pabrik'),0)::text AS dikirim,
           COALESCE(SUM(d.berat_diterima) FILTER(WHERE t.type='Kirim Pabrik' AND t.status='Selesai'),0)::text AS diterima,
@@ -69,7 +69,7 @@ export async function GET(request:Request){
           FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
           WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
             AND ($3::int IS NULL OR (t.type='Beli Plastik' AND t.supplier_id=$3))
-          GROUP BY p.plastik_id,p.plastik_name ORDER BY p.plastik_name LIMIT $4 OFFSET $5`,[...args,supplierId,pageSize,offset]),
+          GROUP BY p.plastik_id,p.plastik_name,p.stok ORDER BY p.plastik_name LIMIT $4 OFFSET $5`,[...args,supplierId,pageSize,offset]),
         db.query(`SELECT COUNT(*)::int AS count FROM (
           SELECT p.plastik_id FROM detail_transaksi_plastik d JOIN transaksi t USING(transaksi_id) JOIN plastik p USING(plastik_id)
           WHERE t.status<>'Batal' AND t.type IN ('Beli Plastik','Kirim Pabrik') AND t.transaction_date BETWEEN $1::date AND $2::date
