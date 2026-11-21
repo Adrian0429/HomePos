@@ -7,7 +7,13 @@ type Debt={transaksi_id:number;transaction_date:string;debt_due_date:string;debt
 type Product={product_id:number;product_name:string;brand_name:string;stok:number;debt_stock:number;non_debt_stock:number};
 type Data={debts:Debt[];products:Product[];stockTotals:{total:number;debt:number;nonDebt:number}};
 const money=(value:string|number)=>rupiah(scaled(String(value),2));
-const date=(value:string)=>new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeZone:'Asia/Jayapura'}).format(new Date(`${value}T00:00:00+09:00`));
+const date=(value:string|null)=>{
+  if(!value)return '—';
+  // PostgreSQL DATE values can reach the browser as YYYY-MM-DD or ISO timestamps.
+  const [year,month,day]=value.slice(0,10).split('-').map(Number);
+  if(!year||!month||!day)return '—';
+  return new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeZone:'Asia/Jayapura'}).format(new Date(Date.UTC(year,month-1,day,12)));
+};
 
 export default function PiutangPage(){
   const [data,setData]=useState<Data>({debts:[],products:[],stockTotals:{total:0,debt:0,nonDebt:0}});
